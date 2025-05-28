@@ -92,14 +92,14 @@ const utmParams = getUTMParams();
       scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : "none";
 
     if (percent >= maxScroll + step || direction !== fsd.behavior.last_scroll_direction) {
+      if (!fsd.behavior.seen_price && percent >= 4) {
+        fsd.behavior.seen_price = true;
+        logEvent("💸 Seen price section");
+      }
       if (percent >= maxScroll + step) {
         maxScroll = percent;
         fsd.behavior.scroll_depth_percent = maxScroll;
         logEvent(`Scrolled ${maxScroll}% of page (${direction})`);
-        if (maxScroll >= 4 && !fsd.behavior.seen_price) {
-          fsd.behavior.seen_price = true;
-          logEvent("💸 Seen price section");
-        }
       } else {
         logEvent(`Scrolled ${direction}`);
       }
@@ -156,7 +156,7 @@ const utmParams = getUTMParams();
         }
       });
   };
-  setInterval(pollCart, 15000);
+  setInterval(pollCart, 10000);
   pollCart();
 
   // Save last seen
