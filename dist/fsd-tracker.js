@@ -156,10 +156,11 @@ const utmParams = getUTMParams();
   setInterval(pollCart, 10000);
   pollCart();
 
-  // Save last seen and session data
-  localStorage.setItem("fsd_last_seen", new Date().toISOString());
-  localStorage.setItem("fsd_last_pages", JSON.stringify(fsd.behavior.viewed_pages));
-  localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
+  window.addEventListener("beforeunload", () => {
+    localStorage.setItem("fsd_last_pages", JSON.stringify(fsd.behavior.viewed_pages));
+    localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
+    localStorage.setItem("fsd_last_seen", new Date().toISOString());
+  });
 
   // Expose for testing
   window.__fsd = fsd;
