@@ -161,10 +161,32 @@ const utmParams = getUTMParams();
     localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
     localStorage.setItem("fsd_last_seen", new Date().toISOString());
   });
-
+ 
   // Expose for testing
   window.__fsd = fsd;
   console.log("✅ FSD Tracker with Timeline Loaded");
+
+   // Initialize Supabase safely after window load
+window.addEventListener("load", () => {
+  if (typeof window.supabase === "undefined") {
+    console.error("❌ Supabase library not loaded!");
+    return;
+  }
+
+  const client = window.supabase.createClient(
+    "https://cehbdpqqyfnqthvgyqhe.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlaGJkcHFxeWZucXRodmd5cWhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NDMxNTMsImV4cCI6MjA2NDAxOTE1M30.1Cd1VCSyEJk1Dfr17ZjNVmsMt0oj8z8h2HBy7_oiEfY"
+  );
+
+  client.from("fsd_sessions").insert([fsd])
+    .then(({ data, error }) => {
+      if (error) {
+        console.error("❌ Supabase insert error:", error);
+      } else {
+        console.log("✅ Supabase insert success:", data);
+      }
+    });
+});
 
   // Custom button tracker mapping
   const buttonMap = {
