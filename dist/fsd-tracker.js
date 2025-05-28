@@ -132,10 +132,16 @@ const utmParams = getUTMParams();
         if (previous !== fsd.shopify.cart_status) {
           logEvent(`Cart status: ${fsd.shopify.cart_status}`);
         }
+
+        // Check for item just added to cart
+        if (data.items.length > 0) {
+          const latestItem = data.items[data.items.length - 1];
+          logEvent(`🛒 Product added to cart: ${latestItem.product_title}`);
+        }
       });
   };
   setInterval(pollCart, 15000);
-  pollCart(); // Initial check
+  pollCart();
 
   // Save last seen
   localStorage.setItem("fsd_last_seen", new Date().toISOString());
@@ -151,6 +157,20 @@ const utmParams = getUTMParams();
       window.__fsd.behavior.clicked_add_to_cart = true;
       logEvent("🛒 Add to Cart clicked!");
     }
+  });
+
+  // Custom button tracker mapping
+  const buttonMap = {
+    ".product_options": "🧩 Product Options",
+    ".shipping_info": "🚚 Shipping Info Clicked"
+  };
+
+  document.addEventListener("click", function (e) {
+    Object.keys(buttonMap).forEach(selector => {
+      if (e.target.closest(selector)) {
+        logEvent(buttonMap[selector]);
+      }
+    });
   });
 
   // Track CTA hovers (mobile & desktop)
@@ -192,3 +212,4 @@ const utmParams = getUTMParams();
     });
   }
 })();
+
