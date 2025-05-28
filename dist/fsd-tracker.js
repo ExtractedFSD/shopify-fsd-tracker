@@ -1,5 +1,3 @@
-// fsd-tracker.js
-
 function getUTMParams() {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -18,8 +16,8 @@ const utmParams = getUTMParams();
     session_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     traffic: {
-  ...utmParams,
-  referrer: document.referrer || ""
+      ...utmParams,
+      referrer: document.referrer || ""
     },
     device: {
       device_type: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
@@ -62,7 +60,6 @@ const utmParams = getUTMParams();
   });
 
   // Track idle time
-  let idle = 0;
   setInterval(() => fsd.behavior.idle_seconds++, 1000);
   ["mousemove", "keydown", "scroll", "touchstart"].forEach(evt =>
     document.addEventListener(evt, () => (fsd.behavior.idle_seconds = 0))
@@ -84,21 +81,59 @@ const utmParams = getUTMParams();
 
   // Expose for testing
   window.__fsd = fsd;
-  console.log("✅ FSD Tracker v6 loaded");
-  // Track Add to Cart clicks
-document.addEventListener("click", function (e) {
-  const target = e.target.closest("button[name='add'], input[name='add']");
-  if (target) {
-    window.__fsd.behavior.clicked_add_to_cart = true;
-    console.log("🛒 Add to Cart clicked!");
-  }
-});
+  console.log("✅ FSD Tracker with GDPR loaded");
 
-// Track CTA hovers
-document.querySelectorAll(".cta-button, .btn, .button, .product-form__submit").forEach((el) => {
-  el.addEventListener("mouseenter", () => {
-    window.__fsd.behavior.hovered_cta = true;
-    console.log("👆 CTA hovered!");
+  // Track Add to Cart clicks
+  document.addEventListener("click", function (e) {
+    const target = e.target.closest("button[name='add'], input[name='add']");
+    if (target) {
+      window.__fsd.behavior.clicked_add_to_cart = true;
+      console.log("🛒 Add to Cart clicked!");
+    }
   });
-});
+
+  // Track CTA hovers (mobile & desktop)
+  window.addEventListener("load", () => {
+    const ctaElements = document.querySelectorAll(".cta-button, .btn, .button, .product-form__submit");
+    console.log("🎯 Found CTA elements:", ctaElements);
+
+    ctaElements.forEach((el) => {
+      const markHovered = () => {
+        window.__fsd.behavior.hovered_cta = true;
+        console.log("👆 CTA hovered or tapped!");
+      };
+      el.addEventListener("mouseenter", markHovered);
+      el.addEventListener("mouseover", markHovered);
+      el.addEventListener("touchstart", markHovered);
+    });
+  });
+
+  // GDPR-enhanced tracking
+  function hasGDPRConsent() {
+    // Replace this check with your real consent tool condition
+    return window.Cookiebot?.consent?.marketing === true || true; // default true for testing
+  }
+
+  if (hasGDPRConsent()) {
+    fsd.behavior.tab_visibility_changes = 0;
+    fsd.behavior.typed_into_fields = false;
+
+    // Tab focus/blur
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        fsd.behavior.tab_visibility_changes++;
+        console.log("👁️ Tab hidden");
+      }
+    });
+
+    // Typing detection (basic)
+    document.querySelectorAll("input, textarea").forEach((input) => {
+      input.addEventListener("input", () => {
+        fsd.behavior.typed_into_fields = true;
+        console.log("⌨️ User typed into a field");
+      });
+    });
+  }
+
 })();
+
