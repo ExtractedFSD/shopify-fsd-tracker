@@ -1,14 +1,25 @@
 // fsd-tracker.js
+
+function getUTMParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    utm_source: params.get("utm_source"),
+    utm_medium: params.get("utm_medium"),
+    utm_campaign: params.get("utm_campaign"),
+    utm_term: params.get("utm_term"),
+    utm_content: params.get("utm_content")
+  };
+}
+
+const utmParams = getUTMParams();
+
 (function () {
   const fsd = {
     session_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     traffic: {
-      utm_source: null,
-      utm_medium: null,
-      utm_campaign: null,
-      utm_term: null,
-      referrer: document.referrer || ""
+  ...utmParams,
+  referrer: document.referrer || ""
     },
     device: {
       device_type: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
