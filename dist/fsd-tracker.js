@@ -122,8 +122,8 @@ const utmParams = getUTMParams();
     })
   );
 
-  // Track cart status (periodically, but avoid duplicate logging)
-  let previousCartItemCount = 0;
+  // Track cart status (periodically, but now compare full cart contents)
+  let previousCartSnapshot = "";
   const pollCart = () => {
     fetch("/cart.js")
       .then(res => res.json())
@@ -132,16 +132,16 @@ const utmParams = getUTMParams();
         const currentItemCount = data.items.length;
         fsd.shopify.cart_status = currentItemCount > 0 ? "has_items" : "empty";
 
+        const newSnapshot = JSON.stringify(data.items.map(item => `${item.id}-${item.quantity}`));
+        if (newSnapshot !== previousCartSnapshot) {
+          const lastItem = data.items[data.items.length - 1];
+          logEvent(`🛒 Product added/updated: ${lastItem.product_title} (x${lastItem.quantity})`);
+          previousCartSnapshot = newSnapshot;
+        }
+
         if (previousStatus !== fsd.shopify.cart_status) {
           logEvent(`Cart status: ${fsd.shopify.cart_status}`);
         }
-
-        if (currentItemCount > previousCartItemCount) {
-          const addedItem = data.items[data.items.length - 1];
-          logEvent(`🛒 Product added to cart: ${addedItem.product_title}`);
-        }
-
-        previousCartItemCount = currentItemCount;
       });
   };
   setInterval(pollCart, 15000);
@@ -156,13 +156,8 @@ const utmParams = getUTMParams();
 
   // Custom button tracker mapping
   const buttonMap = {
-    ".product_options": "🧩 Product Options",
-    ".shipping_info": "🚚 Shipping Info Clicked",
-    ".cta-button": "CTA Button",
-    ".orderbtn": "🛒 Add to cart",
-    ".btn": "Generic Button",
-    ".button": "Plain Button",
-    ".product-form__submit": "Add to Cart Button"
+    ".product_optionsnew": "🧩 Product Options",
+   ".orderbtn": ":shopping_trolley: Add to cart"
   };
 
   // Track clicks using buttonMap
@@ -178,16 +173,14 @@ const utmParams = getUTMParams();
     });
   });
 
-  // Track hovers using buttonMap
+  // Track hovers using buttonMap - log every hover event (not just first)
   window.addEventListener("load", () => {
     Object.keys(buttonMap).forEach(selector => {
       document.querySelectorAll(selector).forEach((el) => {
         const name = buttonMap[selector];
         const markHovered = () => {
-          if (!fsd.behavior.hovered_cta) {
-            fsd.behavior.hovered_cta = true;
-            logEvent(`👆 Hovered: ${name}`);
-          }
+          logEvent(`👆 Hovered: ${name}`);
+          window.__fsd.behavior.hovered_cta = true;
         };
         el.addEventListener("mouseenter", markHovered);
         el.addEventListener("mouseover", markHovered);
@@ -219,4 +212,3 @@ const utmParams = getUTMParams();
     });
   }
 })();
-
