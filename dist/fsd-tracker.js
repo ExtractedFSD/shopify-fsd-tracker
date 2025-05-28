@@ -122,22 +122,26 @@ const utmParams = getUTMParams();
     })
   );
 
-  // Track cart status (periodically)
+  // Track cart status (periodically, but avoid duplicate logging)
+  let previousCartItemCount = 0;
   const pollCart = () => {
     fetch("/cart.js")
       .then(res => res.json())
       .then(data => {
-        const previous = fsd.shopify.cart_status;
-        fsd.shopify.cart_status = data.items.length > 0 ? "has_items" : "empty";
-        if (previous !== fsd.shopify.cart_status) {
+        const previousStatus = fsd.shopify.cart_status;
+        const currentItemCount = data.items.length;
+        fsd.shopify.cart_status = currentItemCount > 0 ? "has_items" : "empty";
+
+        if (previousStatus !== fsd.shopify.cart_status) {
           logEvent(`Cart status: ${fsd.shopify.cart_status}`);
         }
 
-        // Check for item just added to cart
-        if (data.items.length > 0) {
-          const latestItem = data.items[data.items.length - 1];
-          logEvent(`🛒 Product added to cart: ${latestItem.product_title}`);
+        if (currentItemCount > previousCartItemCount) {
+          const addedItem = data.items[data.items.length - 1];
+          logEvent(`🛒 Product added to cart: ${addedItem.product_title}`);
         }
+
+        previousCartItemCount = currentItemCount;
       });
   };
   setInterval(pollCart, 15000);
@@ -212,4 +216,3 @@ const utmParams = getUTMParams();
     });
   }
 })();
-
