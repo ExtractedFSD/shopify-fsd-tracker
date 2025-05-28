@@ -1,3 +1,12 @@
+// Debounce helper
+function debounce(func, delay) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), delay);
+  };
+}
+
 function getUTMParams() {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -12,9 +21,17 @@ function getUTMParams() {
 const utmParams = getUTMParams();
 
 (function () {
+  const timeline = [];
+
+  function logEvent(message) {
+    timeline.push({ timestamp: new Date().toISOString(), message });
+    console.log("🕒", message);
+  }
+
   const fsd = {
     session_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
+    timeline,
     traffic: {
       ...utmParams,
       referrer: document.referrer || ""
@@ -39,7 +56,10 @@ const utmParams = getUTMParams();
       idle_seconds: 0,
       clicked_add_to_cart: false,
       hovered_cta: false,
-      viewed_pages: [window.location.pathname]
+      viewed_pages: [window.location.pathname],
+      last_scroll_direction: null,
+      tab_visibility_changes: 0,
+      typed_into_fields: false
     },
     user_history: {
       is_returning: !!localStorage.getItem("fsd_last_seen"),
@@ -49,20 +69,51 @@ const utmParams = getUTMParams();
     }
   };
 
-  // Update scroll depth
+  logEvent(`Session started on ${window.location.pathname}`);
+
+  // Scroll tracking with direction + debounce
   let maxScroll = 0;
-  window.addEventListener("scroll", () => {
+  let lastScrollTop = window.scrollY;
+
+  const handleScroll = () => {
     const scrollTop = window.scrollY;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     const percent = Math.round((scrollTop / docHeight) * 100);
-    if (percent > maxScroll) maxScroll = percent;
-    fsd.behavior.scroll_depth_percent = maxScroll;
-  });
+
+    const direction =
+      scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : "none";
+
+    if (percent > maxScroll || direction !== fsd.behavior.last_scroll_direction) {
+      if (percent > maxScroll) {
+        maxScroll = percent;
+        fsd.behavior.scroll_depth_percent = maxScroll;
+        logEvent(`Scrolled ${maxScroll}% of page (${direction})`);
+      } else {
+        logEvent(`Scrolled ${direction}`);
+      }
+      fsd.behavior.last_scroll_direction = direction;
+    }
+
+    lastScrollTop = scrollTop;
+  };
+
+  window.addEventListener("scroll", debounce(handleScroll, 200));
 
   // Track idle time
-  setInterval(() => fsd.behavior.idle_seconds++, 1000);
+  let idleCounter = 0;
+  setInterval(() => {
+    idleCounter++;
+    fsd.behavior.idle_seconds++;
+    if (idleCounter === 10) {
+      logEvent("User idle for 10 seconds");
+    }
+  }, 1000);
+
   ["mousemove", "keydown", "scroll", "touchstart"].forEach(evt =>
-    document.addEventListener(evt, () => (fsd.behavior.idle_seconds = 0))
+    document.addEventListener(evt, () => {
+      idleCounter = 0;
+      fsd.behavior.idle_seconds = 0;
+    })
   );
 
   // Track cart status (periodically)
@@ -70,7 +121,11 @@ const utmParams = getUTMParams();
     fetch("/cart.js")
       .then(res => res.json())
       .then(data => {
+        const previous = fsd.shopify.cart_status;
         fsd.shopify.cart_status = data.items.length > 0 ? "has_items" : "empty";
+        if (previous !== fsd.shopify.cart_status) {
+          logEvent(`Cart status: ${fsd.shopify.cart_status}`);
+        }
       });
   };
   setInterval(pollCart, 15000);
@@ -81,26 +136,26 @@ const utmParams = getUTMParams();
 
   // Expose for testing
   window.__fsd = fsd;
-  console.log("✅ FSD Tracker with GDPR loaded");
+  console.log("✅ FSD Tracker with Timeline Loaded");
 
   // Track Add to Cart clicks
   document.addEventListener("click", function (e) {
     const target = e.target.closest("button[name='add'], input[name='add']");
     if (target) {
       window.__fsd.behavior.clicked_add_to_cart = true;
-      console.log("🛒 Add to Cart clicked!");
+      logEvent("🛒 Add to Cart clicked!");
     }
   });
 
   // Track CTA hovers (mobile & desktop)
   window.addEventListener("load", () => {
     const ctaElements = document.querySelectorAll(".cta-button, .btn, .button, .product-form__submit");
-    console.log("🎯 Found CTA elements:", ctaElements);
-
     ctaElements.forEach((el) => {
       const markHovered = () => {
-        window.__fsd.behavior.hovered_cta = true;
-        console.log("👆 CTA hovered or tapped!");
+        if (!fsd.behavior.hovered_cta) {
+          fsd.behavior.hovered_cta = true;
+          logEvent("👆 CTA hovered or tapped!");
+        }
       };
       el.addEventListener("mouseenter", markHovered);
       el.addEventListener("mouseover", markHovered);
@@ -110,30 +165,24 @@ const utmParams = getUTMParams();
 
   // GDPR-enhanced tracking
   function hasGDPRConsent() {
-    // Replace this check with your real consent tool condition
-    return window.Cookiebot?.consent?.marketing === true || true; // default true for testing
+    return window.Cookiebot?.consent?.marketing === true || true;
   }
 
   if (hasGDPRConsent()) {
-    fsd.behavior.tab_visibility_changes = 0;
-    fsd.behavior.typed_into_fields = false;
-
-    // Tab focus/blur
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
         fsd.behavior.tab_visibility_changes++;
-        console.log("👁️ Tab hidden");
+        logEvent("👁️ Tab hidden");
       }
     });
 
-    // Typing detection (basic)
     document.querySelectorAll("input, textarea").forEach((input) => {
       input.addEventListener("input", () => {
-        fsd.behavior.typed_into_fields = true;
-        console.log("⌨️ User typed into a field");
+        if (!fsd.behavior.typed_into_fields) {
+          fsd.behavior.typed_into_fields = true;
+          logEvent("⌨️ User typed into a field");
+        }
       });
     });
   }
-
 })();
-
