@@ -73,4 +73,5 @@
 
   // Expose for testing
   window.__fsd = fsd;
+  console.log("✅ FSD Tracker v6 loaded");
 })();
