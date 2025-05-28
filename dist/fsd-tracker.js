@@ -156,7 +156,7 @@ const utmParams = getUTMParams();
 
   // Custom button tracker mapping
   const buttonMap = {
-    ".product_optionnew": "🧩 Product Options",
+    ".product-optionnew": "🧩 Product Options",
    ".orderbtn": "🛒 Add to cart"
   };
 
