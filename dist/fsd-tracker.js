@@ -78,7 +78,7 @@ const utmParams = getUTMParams();
 
   logEvent(`Session started on ${window.location.pathname}`);
 
-  // Scroll tracking with direction + debounce + 5% step logging
+  // Scroll tracking with direction + debounce + 10% step logging
   let maxScroll = 0;
   let lastScrollTop = window.scrollY;
 
@@ -86,7 +86,7 @@ const utmParams = getUTMParams();
     const scrollTop = window.scrollY;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     const percent = Math.round((scrollTop / docHeight) * 100);
-    const step = 5;
+    const step = 10;
 
     const direction =
       scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : "none";
@@ -96,7 +96,7 @@ const utmParams = getUTMParams();
         maxScroll = percent;
         fsd.behavior.scroll_depth_percent = maxScroll;
         logEvent(`Scrolled ${maxScroll}% of page (${direction})`);
-        if (maxScroll >= 5 && !fsd.behavior.seen_price) {
+        if (maxScroll >= 4 && !fsd.behavior.seen_price) {
           fsd.behavior.seen_price = true;
           logEvent("💸 Seen price section");
         }
@@ -128,7 +128,7 @@ const utmParams = getUTMParams();
     })
   );
 
-  // Track cart status (periodically, but now compare full cart contents)
+  // Track cart status and changes
   let previousCartSnapshot = "";
   const pollCart = () => {
     fetch("/cart.js")
@@ -140,8 +140,14 @@ const utmParams = getUTMParams();
 
         const newSnapshot = JSON.stringify(data.items.map(item => `${item.id}-${item.quantity}`));
         if (newSnapshot !== previousCartSnapshot) {
-          const lastItem = data.items[data.items.length - 1];
-          logEvent(`🛒 Product added/updated: ${lastItem.product_title} (x${lastItem.quantity})`);
+          if (data.items.length > 0) {
+            const lastItem = data.items[data.items.length - 1];
+            if (lastItem && lastItem.product_title) {
+              logEvent(`🛒 Product added/updated: ${lastItem.product_title} (x${lastItem.quantity})`);
+            }
+          } else {
+            logEvent("🗑️ All products removed from cart");
+          }
           previousCartSnapshot = newSnapshot;
         }
 
