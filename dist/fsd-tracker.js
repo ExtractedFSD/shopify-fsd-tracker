@@ -21,15 +21,21 @@ function getUTMParams() {
 const utmParams = getUTMParams();
 
 (function () {
-  const timeline = [];
+  const previousTimeline = JSON.parse(sessionStorage.getItem("fsd_timeline") || "[]");
+  const timeline = [...previousTimeline];
 
   function logEvent(message) {
-    timeline.push({ timestamp: new Date().toISOString(), message });
+    const event = { timestamp: new Date().toISOString(), message };
+    timeline.push(event);
     console.log("🕒", message);
+    sessionStorage.setItem("fsd_timeline", JSON.stringify(timeline));
   }
 
+  const sessionId = sessionStorage.getItem("fsd_session_id") || crypto.randomUUID();
+  sessionStorage.setItem("fsd_session_id", sessionId);
+
   const fsd = {
-    session_id: crypto.randomUUID(),
+    session_id: sessionId,
     timestamp: new Date().toISOString(),
     timeline,
     traffic: {
