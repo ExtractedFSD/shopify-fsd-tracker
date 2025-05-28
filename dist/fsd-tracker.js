@@ -70,9 +70,9 @@
         hovered_cta: false,
         viewed_pages: [window.location.pathname]
       },
-      user_history: {
+    user_history: {
         is_returning: isReturning,
-        last_seen,
+        last_seen: lastSeen,
         pages_viewed_last_session: [],
         last_session_cart_status: null
       }
