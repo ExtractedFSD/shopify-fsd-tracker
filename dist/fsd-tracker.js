@@ -159,6 +159,7 @@ const utmParams = getUTMParams();
     ".product_options": "🧩 Product Options",
     ".shipping_info": "🚚 Shipping Info Clicked",
     ".cta-button": "CTA Button",
+    ".orderbtn": "🛒 Add to cart",
     ".btn": "Generic Button",
     ".button": "Plain Button",
     ".product-form__submit": "Add to Cart Button"
