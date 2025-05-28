@@ -65,7 +65,8 @@ const utmParams = getUTMParams();
       viewed_pages: [window.location.pathname],
       last_scroll_direction: null,
       tab_visibility_changes: 0,
-      typed_into_fields: false
+      typed_into_fields: false,
+      seen_price: false
     },
     user_history: {
       is_returning: !!localStorage.getItem("fsd_last_seen"),
@@ -77,7 +78,7 @@ const utmParams = getUTMParams();
 
   logEvent(`Session started on ${window.location.pathname}`);
 
-  // Scroll tracking with direction + debounce
+  // Scroll tracking with direction + debounce + 5% step logging
   let maxScroll = 0;
   let lastScrollTop = window.scrollY;
 
@@ -85,15 +86,20 @@ const utmParams = getUTMParams();
     const scrollTop = window.scrollY;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     const percent = Math.round((scrollTop / docHeight) * 100);
+    const step = 5;
 
     const direction =
       scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : "none";
 
-    if (percent > maxScroll || direction !== fsd.behavior.last_scroll_direction) {
-      if (percent > maxScroll) {
+    if (percent >= maxScroll + step || direction !== fsd.behavior.last_scroll_direction) {
+      if (percent >= maxScroll + step) {
         maxScroll = percent;
         fsd.behavior.scroll_depth_percent = maxScroll;
         logEvent(`Scrolled ${maxScroll}% of page (${direction})`);
+        if (maxScroll >= 5 && !fsd.behavior.seen_price) {
+          fsd.behavior.seen_price = true;
+          logEvent("💸 Seen price section");
+        }
       } else {
         logEvent(`Scrolled ${direction}`);
       }
@@ -157,7 +163,7 @@ const utmParams = getUTMParams();
   // Custom button tracker mapping
   const buttonMap = {
     ".product-optionnew": "🧩 Product Options",
-   ".orderbtn": "🛒 Add to cart"
+    ".orderbtn": "🛒 Add to cart"
   };
 
   // Track clicks using buttonMap
@@ -166,21 +172,26 @@ const utmParams = getUTMParams();
       if (e.target.closest(selector)) {
         const name = buttonMap[selector];
         logEvent(`🖱️ Clicked: ${name}`);
-        if (selector === ".product-form__submit") {
+        if (selector === ".orderbtn") {
           window.__fsd.behavior.clicked_add_to_cart = true;
         }
       }
     });
   });
 
-  // Track hovers using buttonMap - log every hover event (not just first)
+  // Track hovers using buttonMap - with delay to avoid spam
+  const hoverDelays = {};
   window.addEventListener("load", () => {
     Object.keys(buttonMap).forEach(selector => {
       document.querySelectorAll(selector).forEach((el) => {
         const name = buttonMap[selector];
         const markHovered = () => {
-          logEvent(`👆 Hovered: ${name}`);
-          window.__fsd.behavior.hovered_cta = true;
+          const now = Date.now();
+          if (!hoverDelays[selector] || now - hoverDelays[selector] > 3000) {
+            logEvent(`👆 Hovered: ${name}`);
+            window.__fsd.behavior.hovered_cta = true;
+            hoverDelays[selector] = now;
+          }
         };
         el.addEventListener("mouseenter", markHovered);
         el.addEventListener("mouseover", markHovered);
