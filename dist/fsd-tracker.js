@@ -63,6 +63,7 @@ const utmParams = getUTMParams();
       clicked_add_to_cart: false,
       hovered_cta: false,
       viewed_pages: [window.location.pathname],
+      last_scroll_percent: 0,
       last_scroll_direction: null,
       tab_visibility_changes: 0,
       typed_into_fields: false,
@@ -78,32 +79,28 @@ const utmParams = getUTMParams();
 
   logEvent(`Session started on ${window.location.pathname}`);
 
-  // Scroll tracking with direction + debounce + 10% step logging
-  let maxScroll = 0;
+  // Scroll tracking with direction in 10% increments
+  let lastLoggedScroll = 0;
   let lastScrollTop = window.scrollY;
 
   const handleScroll = () => {
     const scrollTop = window.scrollY;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     const percent = Math.round((scrollTop / docHeight) * 100);
-    const step = 10;
+    const direction = scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : null;
 
-    const direction =
-      scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : "none";
+    if (!fsd.behavior.seen_price && percent >= 4) {
+      fsd.behavior.seen_price = true;
+      logEvent("💸 Seen price section");
+    }
 
-    if (percent >= maxScroll + step || direction !== fsd.behavior.last_scroll_direction) {
-      if (!fsd.behavior.seen_price && percent >= 4) {
-        fsd.behavior.seen_price = true;
-        logEvent("💸 Seen price section");
-      }
-      if (percent >= maxScroll + step) {
-        maxScroll = percent;
-        fsd.behavior.scroll_depth_percent = maxScroll;
-        logEvent(`Scrolled ${maxScroll}% of page (${direction})`);
-      } else {
-        logEvent(`Scrolled ${direction}`);
-      }
+    const scrollIncrement = 10;
+    if (direction && Math.abs(percent - lastLoggedScroll) >= scrollIncrement) {
+      logEvent(`📜 Scrolled ${direction} to ${percent}%`);
+      fsd.behavior.scroll_depth_percent = percent;
+      fsd.behavior.last_scroll_percent = percent;
       fsd.behavior.last_scroll_direction = direction;
+      lastLoggedScroll = percent;
     }
 
     lastScrollTop = scrollTop;
