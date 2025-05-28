@@ -213,6 +213,8 @@ const utmParams = getUTMParams();
       if (document.visibilityState === "hidden") {
         fsd.behavior.tab_visibility_changes++;
         logEvent("👁️ Tab hidden");
+      } else if (document.visibilityState === "visible") {
+        logEvent("👁️ Tab active");
       }
     });
 
