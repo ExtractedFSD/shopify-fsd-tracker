@@ -85,4 +85,20 @@ const utmParams = getUTMParams();
   // Expose for testing
   window.__fsd = fsd;
   console.log("✅ FSD Tracker v6 loaded");
+  // Track Add to Cart clicks
+document.addEventListener("click", function (e) {
+  const target = e.target.closest("button[name='add'], input[name='add']");
+  if (target) {
+    window.__fsd.behavior.clicked_add_to_cart = true;
+    console.log("🛒 Add to Cart clicked!");
+  }
+});
+
+// Track CTA hovers
+document.querySelectorAll(".cta-button, .btn, .button, .product-form__submit").forEach((el) => {
+  el.addEventListener("mouseenter", () => {
+    window.__fsd.behavior.hovered_cta = true;
+    console.log("👆 CTA hovered!");
+  });
+});
 })();
