@@ -154,42 +154,44 @@ const utmParams = getUTMParams();
   window.__fsd = fsd;
   console.log("✅ FSD Tracker with Timeline Loaded");
 
-  // Track Add to Cart clicks
-  document.addEventListener("click", function (e) {
-    const target = e.target.closest("button[name='add'], input[name='add']");
-    if (target) {
-      window.__fsd.behavior.clicked_add_to_cart = true;
-      logEvent("🛒 Add to Cart clicked!");
-    }
-  });
-
   // Custom button tracker mapping
   const buttonMap = {
     ".product_options": "🧩 Product Options",
-    ".shipping_info": "🚚 Shipping Info Clicked"
+    ".shipping_info": "🚚 Shipping Info Clicked",
+    ".cta-button": "CTA Button",
+    ".btn": "Generic Button",
+    ".button": "Plain Button",
+    ".product-form__submit": "Add to Cart Button"
   };
 
+  // Track clicks using buttonMap
   document.addEventListener("click", function (e) {
     Object.keys(buttonMap).forEach(selector => {
       if (e.target.closest(selector)) {
-        logEvent(buttonMap[selector]);
+        const name = buttonMap[selector];
+        logEvent(`🖱️ Clicked: ${name}`);
+        if (selector === ".product-form__submit") {
+          window.__fsd.behavior.clicked_add_to_cart = true;
+        }
       }
     });
   });
 
-  // Track CTA hovers (mobile & desktop)
+  // Track hovers using buttonMap
   window.addEventListener("load", () => {
-    const ctaElements = document.querySelectorAll(".cta-button, .btn, .button, .product-form__submit");
-    ctaElements.forEach((el) => {
-      const markHovered = () => {
-        if (!fsd.behavior.hovered_cta) {
-          fsd.behavior.hovered_cta = true;
-          logEvent("👆 CTA hovered or tapped!");
-        }
-      };
-      el.addEventListener("mouseenter", markHovered);
-      el.addEventListener("mouseover", markHovered);
-      el.addEventListener("touchstart", markHovered);
+    Object.keys(buttonMap).forEach(selector => {
+      document.querySelectorAll(selector).forEach((el) => {
+        const name = buttonMap[selector];
+        const markHovered = () => {
+          if (!fsd.behavior.hovered_cta) {
+            fsd.behavior.hovered_cta = true;
+            logEvent(`👆 Hovered: ${name}`);
+          }
+        };
+        el.addEventListener("mouseenter", markHovered);
+        el.addEventListener("mouseover", markHovered);
+        el.addEventListener("touchstart", markHovered);
+      });
     });
   });
 
@@ -216,3 +218,4 @@ const utmParams = getUTMParams();
     });
   }
 })();
+
