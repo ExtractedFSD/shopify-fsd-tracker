@@ -51,8 +51,8 @@ const utmParams = getUTMParams();
     },
     shopify: {
       product_viewed: window.location.pathname,
-      product_tags: [],
-      collection_viewed: null,
+      product_tags: window.meta?.product?.tags || [],
+      collection_viewed: window.location.pathname.includes("/collections/") ? window.location.pathname.split("/")[window.location.pathname.split("/").indexOf("collections") + 1] || null : null,
       cart_status: "unknown",
       currency: Shopify.currency.active,
       language: navigator.language || "en"
@@ -72,8 +72,8 @@ const utmParams = getUTMParams();
     user_history: {
       is_returning: !!localStorage.getItem("fsd_last_seen"),
       last_seen: localStorage.getItem("fsd_last_seen") || null,
-      pages_viewed_last_session: [],
-      last_session_cart_status: null
+      pages_viewed_last_session: JSON.parse(localStorage.getItem("fsd_last_pages") || "[]"),
+      last_session_cart_status: localStorage.getItem("fsd_last_cart_status") || null
     }
   };
 
@@ -156,8 +156,10 @@ const utmParams = getUTMParams();
   setInterval(pollCart, 10000);
   pollCart();
 
-  // Save last seen
+  // Save last seen and session data
   localStorage.setItem("fsd_last_seen", new Date().toISOString());
+  localStorage.setItem("fsd_last_pages", JSON.stringify(fsd.behavior.viewed_pages));
+  localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
 
   // Expose for testing
   window.__fsd = fsd;
@@ -213,8 +215,8 @@ const utmParams = getUTMParams();
       if (document.visibilityState === "hidden") {
         fsd.behavior.tab_visibility_changes++;
         logEvent("👁️ Tab hidden");
-      } else if (document.visibilityState === "visible") {
-        logEvent("👁️ Tab active");
+      } else {
+        logEvent("👁️ Tab active again");
       }
     });
 
