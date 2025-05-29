@@ -77,7 +77,7 @@ const utmParams = getUTMParams();
     }
   };
 
-  logEvent(Session started on ${window.location.pathname});
+  logEvent(`Session started on ${window.location.pathname}`);
 
   // Scroll tracking with direction in 10% increments
   let lastLoggedScroll = 0;
