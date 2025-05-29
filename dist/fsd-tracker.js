@@ -602,10 +602,11 @@ function initializeTracking() {
         category: category,
         startTime: Date.now()
       });
+    } else {
+      // Update start time if re-entering
+      const tracking = hoverTracking.get(target);
+      tracking.startTime = Date.now();
     }
-    
-    const tracking = hoverTracking.get(target);
-    tracking.startTime = Date.now();
   };
   
   const handleMouseOut = (e) => {
@@ -838,9 +839,11 @@ function initializeTracking() {
       }
       
       // Price sensitivity based on hover patterns
-      const priceHovers = behaviorData.mouse.hover_summary.price;
-      if (priceHovers && (priceHovers.count > 3 || priceHovers.total_time > 5000)) {
-        behaviorData.flags.is_price_sensitive = true;
+      if (behaviorData.mouse.hover_summary && behaviorData.mouse.hover_summary.price) {
+        const priceHovers = behaviorData.mouse.hover_summary.price;
+        if (priceHovers.count > 3 || priceHovers.total_time > 5000) {
+          behaviorData.flags.is_price_sensitive = true;
+        }
       }
       
       // Research mode
@@ -851,7 +854,9 @@ function initializeTracking() {
       
       // Comparison shopping
       if (behaviorData.ecommerce.product_engagement.views > 5 ||
-          behaviorData.ecommerce.product_engagement.image_interactions > 10) {
+          behaviorData.ecommerce.product_engagement.image_interactions > 10 ||
+          (behaviorData.mouse.hover_summary.product_image && 
+           behaviorData.mouse.hover_summary.product_image.count > 5)) {
         behaviorData.flags.is_comparison_shopping = true;
       }
       
