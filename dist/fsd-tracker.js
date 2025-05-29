@@ -1,3 +1,4 @@
+// FSD Tracker v3 with Location & Weather - Pandectes GDPR Integration
 // Debounce helper
 function debounce(func, delay) {
   let timeout;
@@ -18,9 +19,239 @@ function getUTMParams() {
   };
 }
 
+// GDPR Consent Check - Google Consent Mode & Pandectes Integration
+function hasAnalyticsConsent() {
+  // Check Google Consent Mode first
+  if (typeof gtag !== 'undefined') {
+    // Check if analytics_storage is granted
+    try {
+      // Google Consent Mode v2 check
+      const consentState = window.dataLayer?.find(item => 
+        item[0] === 'consent' && item[1] === 'default'
+      );
+      
+      if (consentState && consentState[2]?.analytics_storage === 'granted') {
+        return true;
+      }
+      
+      // Alternative check for consent update
+      const consentUpdate = window.dataLayer?.find(item => 
+        item[0] === 'consent' && item[1] === 'update'
+      );
+      
+      if (consentUpdate && consentUpdate[2]?.analytics_storage === 'granted') {
+        return true;
+      }
+    } catch (e) {
+      console.log("Could not check Google Consent Mode");
+    }
+  }
+  
+  // Fallback to checking Pandectes directly
+  if (window.Pandectes) {
+    return window.Pandectes.getConsent('analytics') === true || 
+           window.Pandectes.getConsent('statistics') === true;
+  }
+  
+  // Final fallback to checking cookie
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'pandectes-consent') {
+      try {
+        const consent = JSON.parse(decodeURIComponent(value));
+        return consent.analytics === true || consent.statistics === true;
+      } catch (e) {
+        console.log("Could not parse Pandectes consent cookie");
+      }
+    }
+  }
+  
+  return false;
+}
+
+// Wait for consent via Google Consent Mode
+function waitForConsent(callback) {
+  if (hasAnalyticsConsent()) {
+    callback();
+  } else {
+    // Listen for Google Consent Mode updates
+    let originalPush = window.dataLayer.push;
+    window.dataLayer.push = function() {
+      originalPush.apply(window.dataLayer, arguments);
+      
+      // Check if this was a consent update
+      const args = arguments[0];
+      if (args && args[0] === 'consent' && args[1] === 'update') {
+        if (args[2]?.analytics_storage === 'granted') {
+          window.dataLayer.push = originalPush; // Restore original
+          callback();
+        }
+      }
+    };
+    
+    // Also listen for Pandectes events as backup
+    window.addEventListener('pandectes:consent-given', function(e) {
+      if (e.detail && (e.detail.analytics || e.detail.statistics)) {
+        callback();
+      }
+    });
+    
+    // Check periodically in case we missed the event
+    let checkCount = 0;
+    const checkInterval = setInterval(() => {
+      checkCount++;
+      if (hasAnalyticsConsent()) {
+        clearInterval(checkInterval);
+        callback();
+      } else if (checkCount > 20) {
+        // Stop checking after 10 seconds
+        clearInterval(checkInterval);
+      }
+    }, 500);
+  }
+}
+
+// Location and Weather API functions
+async function getLocationData() {
+  try {
+    // Using ipapi.co free tier (1,000 requests/day)
+    const response = await fetch('https://ipapi.co/json/');
+    const data = await response.json();
+    
+    return {
+      country: data.country_name || null,
+      region: data.region || null,
+      city: data.city || null,
+      postal_code: data.postal || null,
+      timezone: data.timezone || null,
+      latitude: data.latitude || null,
+      longitude: data.longitude || null
+    };
+  } catch (error) {
+    console.error('Failed to get location data:', error);
+    return {
+      country: null,
+      region: null,
+      city: null,
+      postal_code: null,
+      timezone: null,
+      latitude: null,
+      longitude: null
+    };
+  }
+}
+
+async function getWeatherData(latitude, longitude) {
+  try {
+    // Using OpenWeatherMap free tier (1,000 requests/day)
+    const API_KEY = 'd74971d78c4f001281fe256e8078fc87';
+    const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=metric&appid=${API_KEY}`);
+    const data = await response.json();
+    
+    const now = new Date();
+    const localHour = now.getHours();
+    const localDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    
+    // Determine part of day
+    let partOfDay = 'night';
+    if (localHour >= 5 && localHour < 12) partOfDay = 'morning';
+    else if (localHour >= 12 && localHour < 17) partOfDay = 'afternoon';
+    else if (localHour >= 17 && localHour < 21) partOfDay = 'evening';
+    
+    // Calculate days until payday (assuming last Friday of the month)
+    function getLastFridayOfMonth(date) {
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const lastDay = new Date(year, month + 1, 0);
+      const dayOfWeek = lastDay.getDay();
+      const diff = dayOfWeek >= 5 ? dayOfWeek - 5 : dayOfWeek + 2;
+      return new Date(year, month + 1, -diff);
+    }
+    
+    const lastFriday = getLastFridayOfMonth(now);
+    const nextMonthLastFriday = getLastFridayOfMonth(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    
+    let daysUntilPayday;
+    if (now <= lastFriday) {
+      // Payday hasn't happened this month yet
+      daysUntilPayday = Math.ceil((lastFriday - now) / (1000 * 60 * 60 * 24));
+    } else {
+      // Payday passed, calculate to next month's last Friday
+      daysUntilPayday = Math.ceil((nextMonthLastFriday - now) / (1000 * 60 * 60 * 24));
+    }
+    
+    const isNearPayday = daysUntilPayday <= 3;
+    
+    // Determine season (Northern Hemisphere)
+    const month = now.getMonth();
+    let season = 'winter';
+    if (month >= 2 && month <= 4) season = 'spring';
+    else if (month >= 5 && month <= 7) season = 'summer';
+    else if (month >= 8 && month <= 10) season = 'autumn';
+    
+    return {
+      temperature_celsius: Math.round(data.main?.temp) || null,
+      weather_condition: data.weather?.[0]?.main || null,
+      humidity: data.main?.humidity || null,
+      local_hour: localHour,
+      local_day: localDay,
+      part_of_day: partOfDay,
+      is_weekend: isWeekend,
+      days_until_payday: daysUntilPayday,
+      is_near_payday: isNearPayday,
+      season: season
+    };
+  } catch (error) {
+    console.error('Failed to get weather data:', error);
+    // Return time-based data even if weather API fails
+    const now = new Date();
+    const localHour = now.getHours();
+    const localDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    
+    let partOfDay = 'night';
+    if (localHour >= 5 && localHour < 12) partOfDay = 'morning';
+    else if (localHour >= 12 && localHour < 17) partOfDay = 'afternoon';
+    else if (localHour >= 17 && localHour < 21) partOfDay = 'evening';
+    
+    const currentDate = now.getDate();
+    let daysUntilPayday = 0;
+    if (currentDate <= 15) {
+      daysUntilPayday = 15 - currentDate;
+    } else {
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      daysUntilPayday = lastDay - currentDate;
+    }
+    
+    const month = now.getMonth();
+    let season = 'winter';
+    if (month >= 2 && month <= 4) season = 'spring';
+    else if (month >= 5 && month <= 7) season = 'summer';
+    else if (month >= 8 && month <= 10) season = 'autumn';
+    
+    return {
+      temperature_celsius: null,
+      weather_condition: null,
+      humidity: null,
+      local_hour: localHour,
+      local_day: localDay,
+      part_of_day: partOfDay,
+      is_weekend: isWeekend,
+      days_until_payday: daysUntilPayday,
+      is_near_payday: daysUntilPayday <= 3,
+      season: season
+    };
+  }
+}
+
 const utmParams = getUTMParams();
 
-(function () {
+// Main tracking function - only runs after consent is given
+function initializeTracking() {
+  console.log("✅ Analytics consent granted - initializing FSD Tracker");
+
   // Generate or retrieve persistent user ID
   let userId = localStorage.getItem("fsd_user_id");
   if (!userId) {
@@ -28,8 +259,8 @@ const utmParams = getUTMParams();
     localStorage.setItem("fsd_user_id", userId);
   }
 
-  // Generate session ID for this session
-  const sessionId = sessionStorage.getItem("fsd_session_id") || crypto.randomUUID();
+  // Always generate a new session ID for each page load/session
+  const sessionId = crypto.randomUUID();
   sessionStorage.setItem("fsd_session_id", sessionId);
 
   // Track if this is a returning user
@@ -41,6 +272,10 @@ const utmParams = getUTMParams();
 
   // Queue for events that occur before Supabase is ready
   const eventQueue = [];
+
+  // Store location and weather data
+  let locationData = null;
+  let weatherData = null;
 
   // Helper to process queued events
   async function processEventQueue() {
@@ -162,6 +397,14 @@ const utmParams = getUTMParams();
     );
 
     try {
+      // Get location and weather data
+      locationData = await getLocationData();
+      if (locationData.latitude && locationData.longitude) {
+        weatherData = await getWeatherData(locationData.latitude, locationData.longitude);
+      } else {
+        weatherData = await getWeatherData(null, null);
+      }
+
       // Create or update user record
       const userData = {
         user_id: userId,
@@ -191,7 +434,7 @@ const utmParams = getUTMParams();
         console.log("✅ User record updated");
       }
 
-      // Create session record
+      // Create session record with location and weather data
       const sessionData = {
         session_id: sessionId,
         user_id: userId,
@@ -213,9 +456,24 @@ const utmParams = getUTMParams();
         language: fsd.shopify.language,
         screen_width: fsd.device.screen_width,
         screen_height: fsd.device.screen_height,
-        currency: fsd.shopify.currency
-        // Note: Location and weather fields are null for now
-        // You would need to integrate with IP geolocation and weather APIs to populate these
+        currency: fsd.shopify.currency,
+        // Location data
+        country: locationData?.country,
+        region: locationData?.region,
+        city: locationData?.city,
+        postal_code: locationData?.postal_code,
+        timezone: locationData?.timezone,
+        // Weather and temporal data
+        temperature_celsius: weatherData?.temperature_celsius,
+        weather_condition: weatherData?.weather_condition,
+        humidity: weatherData?.humidity,
+        local_hour: weatherData?.local_hour,
+        local_day: weatherData?.local_day,
+        part_of_day: weatherData?.part_of_day,
+        is_weekend: weatherData?.is_weekend,
+        days_until_payday: weatherData?.days_until_payday,
+        is_near_payday: weatherData?.is_near_payday,
+        season: weatherData?.season
       };
 
       const { error: sessionError } = await supabaseClient
@@ -226,6 +484,8 @@ const utmParams = getUTMParams();
         console.error("❌ Failed to create session:", sessionError);
       } else {
         console.log("✅ Session record created");
+        console.log("📍 Location:", locationData?.city, locationData?.country);
+        console.log("🌤️ Weather:", weatherData?.temperature_celsius + "°C", weatherData?.weather_condition);
         supabaseReady = true;
         // Process any queued events
         await processEventQueue();
@@ -467,5 +727,13 @@ const utmParams = getUTMParams();
   // Expose for debugging
   window.__fsd = fsd;
   window.__fsd_logEvent = logEvent;
+  window.__fsd_locationData = locationData;
+  window.__fsd_weatherData = weatherData;
   console.log("✅ FSD Tracker v3 Initialized");
-})();
+}
+
+// Start the tracker only after consent is given
+waitForConsent(initializeTracking);
+
+// Log that we're waiting for consent
+console.log("⏳ FSD Tracker loaded - waiting for analytics consent via Pandectes");
