@@ -1,45 +1,86 @@
-// Debounce helper
-function debounce(func, delay) {
-  let timeout;
-  return function (...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), delay);
-  };
-}
-
-function getUTMParams() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    utm_source: params.get("utm_source"),
-    utm_medium: params.get("utm_medium"),
-    utm_campaign: params.get("utm_campaign"),
-    utm_term: params.get("utm_term"),
-    utm_content: params.get("utm_content")
-  };
-}
-
-const utmParams = getUTMParams();
+// Cleaned FSD Tracker with Enriched Session Payload and Timeline Logging
 
 (function () {
-  const previousTimeline = JSON.parse(sessionStorage.getItem("fsd_timeline") || "[]");
-  const timeline = [...previousTimeline];
+  const debounce = (func, delay) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+  };
 
-  function logEvent(message) {
-    const event = { timestamp: new Date().toISOString(), message };
-    timeline.push(event);
-    console.log("🕒", message);
-    sessionStorage.setItem("fsd_timeline", JSON.stringify(timeline));
-  }
+  const getUTMParams = () => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      utm_source: params.get("utm_source"),
+      utm_medium: params.get("utm_medium"),
+      utm_campaign: params.get("utm_campaign"),
+      utm_term: params.get("utm_term"),
+      utm_content: params.get("utm_content")
+    };
+  };
 
   const sessionId = sessionStorage.getItem("fsd_session_id") || crypto.randomUUID();
   sessionStorage.setItem("fsd_session_id", sessionId);
+  const userId = localStorage.getItem("fsd_user_id") || crypto.randomUUID();
+  localStorage.setItem("fsd_user_id", userId);
+
+  const timeline = JSON.parse(sessionStorage.getItem("fsd_timeline") || "[]");
+
+  const supabaseClient = typeof window.supabase !== "undefined"
+    ? window.supabase.createClient(
+        "https://cehbdpqqyfnqthvgyqhe.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      )
+    : null;
+
+  const logEvent = (message) => {
+    const event = { timestamp: new Date().toISOString(), message };
+    timeline.push(event);
+    sessionStorage.setItem("fsd_timeline", JSON.stringify(timeline));
+
+    if (supabaseClient) {
+      supabaseClient.from("fsd_timeline_events").insert([
+        {
+          user_id: userId,
+          session_id: sessionId,
+          timestamp: event.timestamp,
+          event_type: "event",
+          message
+        }
+      ]).then(({ error }) => {
+        if (error) console.error("❌ Timeline insert error", error);
+      });
+    }
+  };
+
+  const now = new Date();
+  const time = {
+    local_hour: now.getHours(),
+    local_day: now.toLocaleDateString('en-GB', { weekday: 'long' }),
+    part_of_day: now.getHours() < 6 ? "early_morning" :
+                now.getHours() < 12 ? "morning" :
+                now.getHours() < 18 ? "afternoon" :
+                now.getHours() < 22 ? "evening" : "late_night",
+    is_weekend: [0, 6].includes(now.getDay())
+  };
+
+  const today = new Date();
+  const payday = new Date(today.getFullYear(), today.getMonth(), 28);
+  const daysUntilPayday = Math.max(0, Math.ceil((payday - today) / (1000 * 60 * 60 * 24)));
+  const real_world = {
+    days_until_payday: daysUntilPayday,
+    is_near_payday: daysUntilPayday <= 3,
+    season: ["Winter", "Spring", "Summer", "Autumn"][Math.floor((today.getMonth() % 12) / 3)]
+  };
 
   const fsd = {
     session_id: sessionId,
-    timestamp: new Date().toISOString(),
+    user_id: userId,
+    timestamp: now.toISOString(),
     timeline,
     traffic: {
-      ...utmParams,
+      ...getUTMParams(),
       referrer: document.referrer || ""
     },
     device: {
@@ -57,6 +98,12 @@ const utmParams = getUTMParams();
       currency: Shopify.currency.active,
       language: navigator.language || "en"
     },
+    user_history: {
+      is_returning: !!localStorage.getItem("fsd_last_seen"),
+      last_seen: localStorage.getItem("fsd_last_seen") || null,
+      pages_viewed_last_session: JSON.parse(localStorage.getItem("fsd_last_pages") || "[]"),
+      last_session_cart_status: localStorage.getItem("fsd_last_cart_status") || null
+    },
     behavior: {
       scroll_depth_percent: 0,
       idle_seconds: 0,
@@ -69,20 +116,15 @@ const utmParams = getUTMParams();
       typed_into_fields: false,
       seen_price: false
     },
-    user_history: {
-      is_returning: !!localStorage.getItem("fsd_last_seen"),
-      last_seen: localStorage.getItem("fsd_last_seen") || null,
-      pages_viewed_last_session: JSON.parse(localStorage.getItem("fsd_last_pages") || "[]"),
-      last_session_cart_status: localStorage.getItem("fsd_last_cart_status") || null
-    }
+    time,
+    real_world
   };
 
   logEvent(`Session started on ${window.location.pathname}`);
 
-  // Scroll tracking with direction in 10% increments
+  // Scroll tracking
   let lastLoggedScroll = 0;
   let lastScrollTop = window.scrollY;
-
   const handleScroll = () => {
     const scrollTop = window.scrollY;
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
@@ -94,21 +136,18 @@ const utmParams = getUTMParams();
       logEvent("💸 Seen price section");
     }
 
-    const scrollIncrement = 10;
-    if (direction && Math.abs(percent - lastLoggedScroll) >= scrollIncrement) {
+    if (direction && Math.abs(percent - lastLoggedScroll) >= 10) {
       logEvent(`📜 Scrolled ${direction} to ${percent}%`);
       fsd.behavior.scroll_depth_percent = percent;
       fsd.behavior.last_scroll_percent = percent;
       fsd.behavior.last_scroll_direction = direction;
       lastLoggedScroll = percent;
     }
-
     lastScrollTop = scrollTop;
   };
-
   window.addEventListener("scroll", debounce(handleScroll, 200));
 
-  // Track idle time
+  // Idle tracking
   let idleCounter = 0;
   setInterval(() => {
     idleCounter++;
@@ -117,7 +156,6 @@ const utmParams = getUTMParams();
       logEvent("User idle for 10 seconds");
     }
   }, 1000);
-
   ["mousemove", "keydown", "scroll", "touchstart"].forEach(evt =>
     document.addEventListener(evt, () => {
       idleCounter = 0;
@@ -125,7 +163,7 @@ const utmParams = getUTMParams();
     })
   );
 
-  // Track cart status and changes
+  // Cart polling
   let previousCartSnapshot = "";
   const pollCart = () => {
     fetch("/cart.js")
@@ -161,89 +199,23 @@ const utmParams = getUTMParams();
     localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
     localStorage.setItem("fsd_last_seen", new Date().toISOString());
   });
- 
-  // Expose for testing
-  window.__fsd = fsd;
-  console.log("✅ FSD Tracker with Timeline Loaded");
 
-  function flattenFSD(fsd) {
-  return {
-    session_id: fsd.session_id,
-    timestamp: fsd.timestamp,
-    utm_source: fsd.traffic.utm_source,
-    utm_medium: fsd.traffic.utm_medium,
-    utm_campaign: fsd.traffic.utm_campaign,
-    utm_term: fsd.traffic.utm_term,
-    utm_content: fsd.traffic.utm_content,
-    referrer: fsd.traffic.referrer,
-    device_type: fsd.device.device_type,
-    os: fsd.device.os,
-    browser: fsd.device.browser,
-    screen_width: fsd.device.screen_width,
-    screen_height: fsd.device.screen_height,
-    product_viewed: fsd.shopify.product_viewed,
-    product_tags: fsd.shopify.product_tags,
-    collection_viewed: fsd.shopify.collection_viewed,
-    cart_status: fsd.shopify.cart_status,
-    currency: fsd.shopify.currency,
-    language: fsd.shopify.language,
-    is_returning: fsd.user_history.is_returning,
-    last_seen: fsd.user_history.last_seen,
-    pages_viewed_last_session: fsd.user_history.pages_viewed_last_session,
-    last_session_cart_status: fsd.user_history.last_session_cart_status,
-    timeline: fsd.timeline,
-    behavior: fsd.behavior,
-    shopify: fsd.shopify,
-    device: fsd.device,
-    traffic: fsd.traffic,
-    user_history: fsd.user_history
-  };
-}
-
-   // Initialize Supabase safely after window load
-window.addEventListener("load", () => {
-  if (typeof window.supabase === "undefined") {
-    console.error("❌ Supabase library not loaded!");
-    return;
-  }
-
-  const client = window.supabase.createClient(
-    "https://cehbdpqqyfnqthvgyqhe.supabase.co",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlaGJkcHFxeWZucXRodmd5cWhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NDMxNTMsImV4cCI6MjA2NDAxOTE1M30.1Cd1VCSyEJk1Dfr17ZjNVmsMt0oj8z8h2HBy7_oiEfY"
-  );
-
-  const flatPayload = flattenFSD(fsd);
-  
-  client.from("fsd_sessions").insert([flatPayload])
-    .then(({ data, error }) => {
-      if (error) {
-        console.error("❌ Supabase insert error:", error);
-      } else {
-        console.log("✅ Supabase insert success:", data);
-      }
-    });
-});
-
-  // Custom button tracker mapping
+  // Button click & hover tracking
   const buttonMap = {
     ".product-optionnew": "🧩 Product Options",
     ".orderbtn": "🛒 Add to cart"
   };
-
-  // Track clicks using buttonMap
   document.addEventListener("click", function (e) {
     Object.keys(buttonMap).forEach(selector => {
       if (e.target.closest(selector)) {
         const name = buttonMap[selector];
         logEvent(`🖱️ Clicked: ${name}`);
         if (selector === ".orderbtn") {
-          window.__fsd.behavior.clicked_add_to_cart = true;
+          fsd.behavior.clicked_add_to_cart = true;
         }
       }
     });
   });
-
-  // Track hovers using buttonMap - with delay to avoid spam
   const hoverDelays = {};
   window.addEventListener("load", () => {
     Object.keys(buttonMap).forEach(selector => {
@@ -253,7 +225,7 @@ window.addEventListener("load", () => {
           const now = Date.now();
           if (!hoverDelays[selector] || now - hoverDelays[selector] > 3000) {
             logEvent(`👆 Hovered: ${name}`);
-            window.__fsd.behavior.hovered_cta = true;
+            fsd.behavior.hovered_cta = true;
             hoverDelays[selector] = now;
           }
         };
@@ -264,11 +236,10 @@ window.addEventListener("load", () => {
     });
   });
 
-  // GDPR-enhanced tracking
+  // Typing and tab visibility tracking (GDPR check optional)
   function hasGDPRConsent() {
     return window.Cookiebot?.consent?.marketing === true || true;
   }
-
   if (hasGDPRConsent()) {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
@@ -278,7 +249,6 @@ window.addEventListener("load", () => {
         logEvent("👁️ Tab active again");
       }
     });
-
     document.querySelectorAll("input, textarea").forEach((input) => {
       input.addEventListener("input", () => {
         if (!fsd.behavior.typed_into_fields) {
@@ -288,4 +258,69 @@ window.addEventListener("load", () => {
       });
     });
   }
+
+  // Geo enrichment
+  fetch("https://ipapi.co/json")
+    .then(res => res.json())
+    .then(location => {
+      fsd.location = {
+        country: location.country_name,
+        region: location.region,
+        city: location.city,
+        postal_code: location.postal,
+        timezone: location.timezone
+      };
+      insertSession();
+    })
+    .catch(() => insertSession());
+
+  function insertSession() {
+    if (supabaseClient) {
+      const flat = {
+        session_id: fsd.session_id,
+        user_id: fsd.user_id,
+        timestamp: fsd.timestamp,
+        utm_source: fsd.traffic.utm_source,
+        utm_medium: fsd.traffic.utm_medium,
+        utm_campaign: fsd.traffic.utm_campaign,
+        utm_term: fsd.traffic.utm_term,
+        utm_content: fsd.traffic.utm_content,
+        referrer: fsd.traffic.referrer,
+        device_type: fsd.device.device_type,
+        os: fsd.device.os,
+        browser: fsd.device.browser,
+        screen_width: fsd.device.screen_width,
+        screen_height: fsd.device.screen_height,
+        currency: fsd.shopify.currency,
+        language: fsd.shopify.language,
+        product_viewed: fsd.shopify.product_viewed,
+        product_tags: fsd.shopify.product_tags,
+        collection_viewed: fsd.shopify.collection_viewed,
+        last_session_cart_status: fsd.user_history.last_session_cart_status,
+        pages_viewed_last_session: fsd.user_history.pages_viewed_last_session,
+        is_returning: fsd.user_history.is_returning,
+        last_seen: fsd.user_history.last_seen,
+        country: fsd.location?.country,
+        region: fsd.location?.region,
+        city: fsd.location?.city,
+        postal_code: fsd.location?.postal_code,
+        timezone: fsd.location?.timezone,
+        local_hour: fsd.time.local_hour,
+        local_day: fsd.time.local_day,
+        part_of_day: fsd.time.part_of_day,
+        is_weekend: fsd.time.is_weekend,
+        days_until_payday: fsd.real_world.days_until_payday,
+        is_near_payday: fsd.real_world.is_near_payday,
+        season: fsd.real_world.season
+      };
+      supabaseClient.from("fsd_sessions").insert([flat])
+        .then(({ data, error }) => {
+          if (error) console.error("❌ Supabase insert error", error);
+          else console.log("✅ Supabase session saved", data);
+        });
+    }
+  }
+
+  window.__fsd = fsd;
 })();
+
