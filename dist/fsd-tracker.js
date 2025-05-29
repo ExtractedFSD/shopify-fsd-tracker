@@ -516,7 +516,7 @@ function initializeTracking() {
       // Product elements
       { selector: '.product-card', id: 'product_card' },
       { selector: '.product-image', id: 'product_image' },
-      { selector: '.product-price, .price', id: 'price' },
+      { selector: '.product-price, .floatprice', id: 'price' },
       { selector: '.product-title', id: 'product_title' },
       
       // CTAs
@@ -592,18 +592,35 @@ function initializeTracking() {
     lastClickY = e.clientY;
   };
 
-  // Track hover events
+  // Track hover events with category aggregation
   const hoverTracking = new Map();
+  
+  // Define hover categories
+  function getHoverCategory(element) {
+    // Check for specific important elements
+    if (element.closest('.add-to-cart, .orderbtn, [data-add-to-cart]')) return 'add_to_cart';
+    if (element.closest('.price, .product-price')) return 'price';
+    if (element.closest('.product-image')) return 'product_image';
+    if (element.closest('.size-guide, .sizing-chart')) return 'size_guide';
+    if (element.closest('.checkout, .checkout-button')) return 'checkout';
+    if (element.closest('a')) return 'links';
+    if (element.closest('button')) return 'buttons';
+    
+    // Ignore everything else
+    return null;
+  }
   
   const handleMouseOver = (e) => {
     const target = e.target;
-    const identifier = target.dataset.trackingId || target.className || target.tagName;
+    const category = getHoverCategory(target);
+    
+    // Skip if not a tracked category
+    if (!category) return;
     
     if (!hoverTracking.has(target)) {
       hoverTracking.set(target, {
-        identifier: identifier,
-        startTime: Date.now(),
-        totalTime: 0
+        category: category,
+        startTime: Date.now()
       });
     }
     
@@ -617,28 +634,36 @@ function initializeTracking() {
     
     if (tracking && tracking.startTime) {
       const hoverTime = Date.now() - tracking.startTime;
-      tracking.totalTime += hoverTime;
       
-      // Update behavior data
-      if (!behaviorData.mouse.hover_events[tracking.identifier]) {
-        behaviorData.mouse.hover_events[tracking.identifier] = {
+      // Initialize category if doesn't exist
+      if (!behaviorData.mouse.hover_events[tracking.category]) {
+        behaviorData.mouse.hover_events[tracking.category] = {
           count: 0,
           total_time: 0,
+          avg_time: 0,
           max_time: 0
         };
       }
       
-      const hoverData = behaviorData.mouse.hover_events[tracking.identifier];
+      const hoverData = behaviorData.mouse.hover_events[tracking.category];
       hoverData.count++;
       hoverData.total_time += hoverTime;
+      hoverData.avg_time = Math.round(hoverData.total_time / hoverData.count);
       hoverData.max_time = Math.max(hoverData.max_time, hoverTime);
       
       behaviorData.interactions.total_hovers++;
       
-      // Detect comparison shopping behavior
-      if (tracking.identifier.includes('product') && hoverData.count > 3) {
-        behaviorData.flags.is_comparison_shopping = true;
+      // Set flags based on hover patterns
+      if (tracking.category === 'add_to_cart' && hoverTime > 2000) {
+        behaviorData.flags.shows_purchase_intent = true;
       }
+      
+      if (tracking.category === 'price' && hoverData.count > 3) {
+        behaviorData.flags.is_price_sensitive = true;
+      }
+      
+      // Clean up tracking
+      hoverTracking.delete(target);
     }
   };
 
@@ -841,12 +866,20 @@ function initializeTracking() {
         behaviorData.flags.is_frustrated = true;
       }
       
-      if (behaviorData.ecommerce.price_checks > 3) {
+      // Price sensitivity based on hover patterns
+      const priceHovers = behaviorData.mouse.hover_events.price;
+      if (priceHovers && (priceHovers.count > 3 || priceHovers.total_time > 5000)) {
         behaviorData.flags.is_price_sensitive = true;
       }
       
       if (behaviorData.interactions.copy_events > 0 || behaviorData.interactions.selection_events > 5) {
         behaviorData.flags.is_research_mode = true;
+      }
+      
+      // Comparison shopping if multiple product hovers
+      const productHovers = behaviorData.mouse.hover_events.product_image;
+      if (productHovers && productHovers.count > 5) {
+        behaviorData.flags.is_comparison_shopping = true;
       }
       
       // Clean up empty visibility data before saving
