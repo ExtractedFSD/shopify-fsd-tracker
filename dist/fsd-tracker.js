@@ -96,7 +96,7 @@ const utmParams = getUTMParams();
 
     const scrollIncrement = 10;
     if (direction && Math.abs(percent - lastLoggedScroll) >= scrollIncrement) {
-      logEvent(📜 Scrolled ${direction} to ${percent}%);
+      logEvent(`📜 Scrolled ${direction} to ${percent}%`);
       fsd.behavior.scroll_depth_percent = percent;
       fsd.behavior.last_scroll_percent = percent;
       fsd.behavior.last_scroll_direction = direction;
@@ -135,12 +135,12 @@ const utmParams = getUTMParams();
         const currentItemCount = data.items.length;
         fsd.shopify.cart_status = currentItemCount > 0 ? "has_items" : "empty";
 
-        const newSnapshot = JSON.stringify(data.items.map(item => ${item.id}-${item.quantity}));
+        const newSnapshot = JSON.stringify(data.items.map(item => `${item.id}-${item.quantity}`));
         if (newSnapshot !== previousCartSnapshot) {
           if (data.items.length > 0) {
             const lastItem = data.items[data.items.length - 1];
             if (lastItem && lastItem.product_title) {
-              logEvent(🛒 Product added/updated: ${lastItem.product_title} (x${lastItem.quantity}));
+              logEvent(`🛒 Product added/updated: ${lastItem.product_title} (x${lastItem.quantity})`);
             }
           } else {
             logEvent("🗑️ All products removed from cart");
@@ -149,7 +149,7 @@ const utmParams = getUTMParams();
         }
 
         if (previousStatus !== fsd.shopify.cart_status) {
-          logEvent(Cart status: ${fsd.shopify.cart_status});
+          logEvent(`Cart status: ${fsd.shopify.cart_status}`);
         }
       });
   };
@@ -235,7 +235,7 @@ window.addEventListener("load", () => {
     Object.keys(buttonMap).forEach(selector => {
       if (e.target.closest(selector)) {
         const name = buttonMap[selector];
-        logEvent(🖱️ Clicked: ${name});
+        logEvent(`🖱️ Clicked: ${name}`);
         if (selector === ".orderbtn") {
           window.__fsd.behavior.clicked_add_to_cart = true;
         }
@@ -252,7 +252,7 @@ window.addEventListener("load", () => {
         const markHovered = () => {
           const now = Date.now();
           if (!hoverDelays[selector] || now - hoverDelays[selector] > 3000) {
-            logEvent(👆 Hovered: ${name});
+            logEvent(`👆 Hovered: ${name}`);
             window.__fsd.behavior.hovered_cta = true;
             hoverDelays[selector] = now;
           }
