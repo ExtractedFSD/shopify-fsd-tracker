@@ -269,99 +269,91 @@ function initializeTracking() {
   let locationData = null;
   let weatherData = null;
 
-  // Behavior aggregation data structure
+  // Behavior aggregation data structure - OPTIMIZED
   const behaviorData = {
-    // Scroll behavior
+    // Scroll behavior - simplified
     scroll: {
       total_distance: 0,
       max_depth_percent: 0,
       direction_changes: 0,
-      velocity_samples: [],
-      slow_scroll_time: 0,
-      fast_scroll_time: 0,
-      scroll_patterns: [],
-      sections_viewed: {}
+      avg_velocity: 0,
+      time_reading: 0,      // Slow scrolling
+      time_skimming: 0,     // Fast scrolling
+      time_searching: 0,    // Erratic scrolling
+      dominant_pattern: 'unknown'
     },
     
-    // Mouse/touch behavior
+    // Mouse behavior - aggregated
     mouse: {
       total_distance: 0,
-      velocity_samples: [],
+      avg_velocity: 0,
+      peak_velocity: 0,
       acceleration_events: 0,
-      hover_events: {},
-      click_positions: [],
+      hover_summary: {},     // Just categories with totals
       rage_clicks: 0,
       dead_clicks: 0
     },
     
-    // Attention metrics
+    // Attention metrics - simplified
     attention: {
       total_engaged_time: 0,
-      idle_time: 0,
-      active_time: 0,
-      reading_time: 0,
-      time_to_first_interaction: null,
-      viewport_attention: {},
-      element_visibility: {}
+      total_idle_time: 0,
+      avg_engagement_score: 0,
+      key_elements_viewed: {} // Only important elements
     },
     
-    // Interaction patterns
+    // Interaction patterns - counts only
     interactions: {
       total_clicks: 0,
       total_hovers: 0,
-      form_interactions: 0,
-      form_abandonments: 0,
-      copy_events: 0,
-      paste_events: 0,
-      selection_events: 0,
-      zoom_events: 0
+      total_scrolls: 0,
+      form_starts: 0,
+      form_completes: 0,
+      copy_paste_events: 0
     },
     
-    // E-commerce specific
+    // E-commerce specific - compressed
     ecommerce: {
-      product_views: [],
-      cart_interactions: [],
-      cart_value_timeline: [],
-      add_remove_patterns: [],
-      checkout_progress: 0,
-      price_checks: 0,
-      size_guide_views: 0,
-      review_interactions: 0
+      cart_interactions: {
+        current_value: 0,
+        peak_value: 0,
+        add_events: 0,
+        remove_events: 0,
+        last_change: null
+      },
+      product_engagement: {
+        views: 0,
+        image_interactions: 0,
+        detail_reads: 0,
+        price_checks: 0
+      }
     },
     
-    // Content engagement
-    content: {
-      images_viewed: {},
-      videos_played: {},
-      links_clicked: [],
-      external_link_clicks: 0,
-      internal_navigation: []
-    },
-    
-    // Technical metrics
+    // Technical metrics - averages only
     technical: {
-      fps_samples: [],
-      load_time: 0,
-      time_to_interactive: 0,
-      connection_speed: null,
-      battery_level: null,
-      memory_usage: null
+      avg_fps: 0,
+      low_fps_events: 0,
+      connection_type: null,
+      device_memory: null,
+      battery_level: null
     },
     
-    // Behavioral flags
+    // Behavioral flags - unchanged
     flags: {
       is_engaged: false,
       is_frustrated: false,
       is_comparison_shopping: false,
       is_research_mode: false,
       shows_purchase_intent: false,
-      is_price_sensitive: false
+      is_price_sensitive: false,
+      engagement_level: 'low' // low, medium, high
     }
   };
 
-  // Track mouse position and movement
+  // Track mouse position and movement - simplified
   let lastMouseX = 0, lastMouseY = 0, mouseDistance = 0;
   let lastMouseTime = Date.now();
+  let mouseVelocities = [];
   
   const handleMouseMove = throttle((e) => {
     const currentTime = Date.now();
@@ -378,19 +370,16 @@ function initializeTracking() {
       
       // Calculate velocity
       const velocity = distance / timeDelta;
-      behaviorData.mouse.velocity_samples.push({
-        velocity: velocity,
-        timestamp: currentTime
-      });
+      mouseVelocities.push(velocity);
+      if (mouseVelocities.length > 10) mouseVelocities.shift();
       
-      // Keep only last 50 samples
-      if (behaviorData.mouse.velocity_samples.length > 50) {
-        behaviorData.mouse.velocity_samples.shift();
-      }
+      // Update averages
+      behaviorData.mouse.avg_velocity = mouseVelocities.reduce((a, b) => a + b, 0) / mouseVelocities.length;
+      behaviorData.mouse.peak_velocity = Math.max(behaviorData.mouse.peak_velocity, velocity);
       
       // Detect sudden acceleration (potential frustration)
-      if (velocity > 2 && behaviorData.mouse.velocity_samples.length > 1) {
-        const prevVelocity = behaviorData.mouse.velocity_samples[behaviorData.mouse.velocity_samples.length - 2].velocity;
+      if (velocity > 2 && mouseVelocities.length > 1) {
+        const prevVelocity = mouseVelocities[mouseVelocities.length - 2];
         if (velocity > prevVelocity * 2) {
           behaviorData.mouse.acceleration_events++;
         }
@@ -402,10 +391,10 @@ function initializeTracking() {
     lastMouseTime = currentTime;
   }, 50);
 
-  // Enhanced scroll tracking
+  // Enhanced scroll tracking - simplified
   let lastScrollY = window.scrollY;
   let lastScrollTime = Date.now();
-  let scrollSamples = [];
+  let scrollVelocities = [];
   
   const handleScroll = throttle(() => {
     const currentScrollY = window.scrollY;
@@ -417,6 +406,7 @@ function initializeTracking() {
       const velocity = distance / timeDelta;
       
       behaviorData.scroll.total_distance += distance;
+      behaviorData.interactions.total_scrolls++;
       
       // Track direction changes
       if ((currentScrollY > lastScrollY && lastScrollY < window.scrollY) ||
@@ -424,26 +414,19 @@ function initializeTracking() {
         behaviorData.scroll.direction_changes++;
       }
       
-      // Categorize scroll speed
+      // Categorize scroll time
       if (velocity < 0.5) {
-        behaviorData.scroll.slow_scroll_time += timeDelta;
+        behaviorData.scroll.time_reading += timeDelta;
       } else if (velocity > 2) {
-        behaviorData.scroll.fast_scroll_time += timeDelta;
+        behaviorData.scroll.time_skimming += timeDelta;
+      } else if (velocity > 1 && behaviorData.scroll.direction_changes > 5) {
+        behaviorData.scroll.time_searching += timeDelta;
       }
       
-      // Track scroll patterns
-      scrollSamples.push({
-        position: currentScrollY,
-        velocity: velocity,
-        timestamp: currentTime
-      });
-      
-      // Detect patterns every 10 samples
-      if (scrollSamples.length >= 10) {
-        const pattern = analyzeScrollPattern(scrollSamples);
-        behaviorData.scroll.scroll_patterns.push(pattern);
-        scrollSamples = [];
-      }
+      // Keep running average of velocity
+      scrollVelocities.push(velocity);
+      if (scrollVelocities.length > 10) scrollVelocities.shift();
+      behaviorData.scroll.avg_velocity = scrollVelocities.reduce((a, b) => a + b, 0) / scrollVelocities.length;
       
       // Update max scroll depth
       const docHeight = document.documentElement.scrollHeight - window.innerHeight;
@@ -474,39 +457,44 @@ function initializeTracking() {
     };
   }
 
-  // Intersection Observer for element visibility
+  // Intersection Observer for element visibility - simplified
   const visibilityObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       const element = entry.target;
       const identifier = element.dataset.trackingId;
       
-      // Skip if no tracking ID set
       if (!identifier) return;
       
-      if (!behaviorData.attention.element_visibility[identifier]) {
-        behaviorData.attention.element_visibility[identifier] = {
+      if (!behaviorData.attention.key_elements_viewed[identifier]) {
+        behaviorData.attention.key_elements_viewed[identifier] = {
           first_seen: null,
-          total_visible_time: 0,
-          last_visible_start: null,
-          view_count: 0
+          total_time: 0,
+          views: 0
         };
       }
       
-      const tracking = behaviorData.attention.element_visibility[identifier];
+      const tracking = behaviorData.attention.key_elements_viewed[identifier];
       
       if (entry.isIntersecting) {
         if (!tracking.first_seen) {
           tracking.first_seen = Date.now();
         }
         tracking.last_visible_start = Date.now();
-        tracking.view_count++;
+        tracking.views++;
+        
+        // Track specific e-commerce events
+        if (identifier.includes('price')) {
+          behaviorData.ecommerce.product_engagement.price_checks++;
+        } else if (identifier.includes('product_image')) {
+          behaviorData.ecommerce.product_engagement.image_interactions++;
+        }
       } else if (tracking.last_visible_start) {
-        tracking.total_visible_time += Date.now() - tracking.last_visible_start;
-        tracking.last_visible_start = null;
+        tracking.total_time += Date.now() - tracking.last_visible_start;
+        delete tracking.last_visible_start; // Clean up temporary data
       }
     });
   }, {
-    threshold: [0, 0.25, 0.5, 0.75, 1.0]
+    threshold: [0.5] // Only track when 50% visible
   });
 
   // Track key elements
@@ -516,7 +504,7 @@ function initializeTracking() {
       // Product elements
       { selector: '.product-card', id: 'product_card' },
       { selector: '.product-image', id: 'product_image' },
-      { selector: '.product-price, .floatprice', id: 'price' },
+      { selector: '.product-price, .price', id: 'price' },
       { selector: '.product-title', id: 'product_title' },
       
       // CTAs
@@ -546,7 +534,7 @@ function initializeTracking() {
     });
   };
 
-  // Enhanced click tracking
+  // Enhanced click tracking - simplified
   let lastClickTime = 0;
   let clicksInSameArea = 0;
   let lastClickX = 0, lastClickY = 0;
@@ -557,15 +545,7 @@ function initializeTracking() {
     
     behaviorData.interactions.total_clicks++;
     
-    // Track click position
-    behaviorData.mouse.click_positions.push({
-      x: e.clientX,
-      y: e.clientY,
-      target: e.target.tagName,
-      timestamp: currentTime
-    });
-    
-    // Detect rage clicks (multiple clicks in same area within 1 second)
+    // Detect rage clicks
     const clickDistance = Math.sqrt(
       Math.pow(e.clientX - lastClickX, 2) + 
       Math.pow(e.clientY - lastClickY, 2)
@@ -581,7 +561,7 @@ function initializeTracking() {
       clicksInSameArea = 1;
     }
     
-    // Detect dead clicks (clicks with no effect)
+    // Detect dead clicks
     const target = e.target;
     if (!target.href && !target.onclick && !target.closest('a, button, input, select, textarea')) {
       behaviorData.mouse.dead_clicks++;
@@ -645,7 +625,7 @@ function initializeTracking() {
         };
       }
       
-      const hoverData = behaviorData.mouse.hover_events[tracking.category];
+      const hoverData = behaviorData.mouse.hover_summary[tracking.category];
       hoverData.count++;
       hoverData.total_time += hoverTime;
       hoverData.avg_time = Math.round(hoverData.total_time / hoverData.count);
@@ -667,83 +647,6 @@ function initializeTracking() {
     }
   };
 
-  // Track copy/paste events
-  document.addEventListener('copy', () => {
-    behaviorData.interactions.copy_events++;
-    behaviorData.flags.is_research_mode = true;
-  });
-  
-  document.addEventListener('paste', () => {
-    behaviorData.interactions.paste_events++;
-  });
-  
-  // Track text selection
-  document.addEventListener('selectionchange', debounce(() => {
-    const selection = window.getSelection();
-    if (selection.toString().length > 0) {
-      behaviorData.interactions.selection_events++;
-    }
-  }, 500));
-
-  // Track zoom events
-  let lastScale = 1;
-  window.visualViewport?.addEventListener('resize', () => {
-    const currentScale = window.visualViewport.scale;
-    if (currentScale !== lastScale) {
-      behaviorData.interactions.zoom_events++;
-      lastScale = currentScale;
-    }
-  });
-
-  // Performance monitoring
-  const performanceObserver = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      if (entry.entryType === 'measure' && entry.name === 'fsd-fps') {
-        behaviorData.technical.fps_samples.push({
-          fps: Math.round(1000 / entry.duration),
-          timestamp: Date.now()
-        });
-      }
-    }
-  });
-  performanceObserver.observe({ entryTypes: ['measure'] });
-
-  // FPS tracking
-  let lastFrameTime = performance.now();
-  const trackFPS = () => {
-    const currentTime = performance.now();
-    performance.measure('fsd-fps', {
-      start: lastFrameTime,
-      end: currentTime
-    });
-    lastFrameTime = currentTime;
-    requestAnimationFrame(trackFPS);
-  };
-  requestAnimationFrame(trackFPS);
-
-  // Attention and idle tracking
-  let idleTimer = null;
-  let lastActivityTime = Date.now();
-  
-  const resetIdleTimer = () => {
-    const now = Date.now();
-    const idleTime = now - lastActivityTime;
-    
-    if (idleTime > 100) {
-      behaviorData.attention.idle_time += idleTime;
-    } else {
-      behaviorData.attention.active_time += idleTime;
-    }
-    
-    lastActivityTime = now;
-    behaviorData.flags.is_engaged = true;
-    
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      behaviorData.flags.is_engaged = false;
-    }, 30000); // 30 seconds of inactivity = not engaged
-  };
-
   // Set up event listeners
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('scroll', handleScroll);
@@ -751,36 +654,101 @@ function initializeTracking() {
   document.addEventListener('mouseover', handleMouseOver);
   document.addEventListener('mouseout', handleMouseOut);
   
-  ['mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
-    document.addEventListener(event, resetIdleTimer);
+  // Track copy/paste events
+  document.addEventListener('copy', () => {
+    behaviorData.interactions.copy_paste_events++;
+    behaviorData.flags.is_research_mode = true;
+  });
+  
+  document.addEventListener('paste', () => {
+    behaviorData.interactions.copy_paste_events++;
   });
 
-  // E-commerce specific tracking
+  // Performance monitoring - simplified
+  let fpsSum = 0;
+  let fpsCount = 0;
+  let lastFrameTime = performance.now();
+  
+  const trackFPS = () => {
+    const currentTime = performance.now();
+    const fps = Math.round(1000 / (currentTime - lastFrameTime));
+    
+    fpsSum += fps;
+    fpsCount++;
+    
+    // Update average FPS every 60 frames
+    if (fpsCount >= 60) {
+      behaviorData.technical.avg_fps = Math.round(fpsSum / fpsCount);
+      if (behaviorData.technical.avg_fps < 30) {
+        behaviorData.technical.low_fps_events++;
+      }
+      fpsSum = 0;
+      fpsCount = 0;
+    }
+    
+    lastFrameTime = currentTime;
+    requestAnimationFrame(trackFPS);
+  };
+  requestAnimationFrame(trackFPS);
+
+  // Attention and idle tracking - simplified
+  let lastActivityTime = Date.now();
+  let isIdle = false;
+  
+  const markActive = () => {
+    const now = Date.now();
+    if (isIdle) {
+      behaviorData.attention.total_idle_time += now - lastActivityTime;
+      isIdle = false;
+    }
+    lastActivityTime = now;
+    behaviorData.flags.is_engaged = true;
+  };
+  
+  // Check for idle every 5 seconds
+  setInterval(() => {
+    const now = Date.now();
+    const timeSinceActivity = now - lastActivityTime;
+    
+    if (timeSinceActivity > 5000 && !isIdle) {
+      isIdle = true;
+      behaviorData.flags.is_engaged = false;
+    }
+  }, 5000);
+  
+  ['mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(event => {
+    document.addEventListener(event, markActive);
+  });
+
+  // E-commerce specific tracking - simplified
   const trackEcommerce = () => {
-    // Track cart value changes
+    let lastCartValue = 0;
+    let lastItemCount = 0;
+    
     const pollCart = async () => {
       try {
         const response = await fetch('/cart.js');
         const cart = await response.json();
         
-        behaviorData.ecommerce.cart_value_timeline.push({
-          timestamp: Date.now(),
-          value: cart.total_price,
-          item_count: cart.items.length
-        });
+        // Update current cart state
+        behaviorData.ecommerce.cart_interactions.current_value = cart.total_price;
+        behaviorData.ecommerce.cart_interactions.peak_value = Math.max(
+          behaviorData.ecommerce.cart_interactions.peak_value,
+          cart.total_price
+        );
         
-        // Detect add/remove patterns
-        if (behaviorData.ecommerce.cart_value_timeline.length > 1) {
-          const prev = behaviorData.ecommerce.cart_value_timeline[behaviorData.ecommerce.cart_value_timeline.length - 2];
-          const curr = behaviorData.ecommerce.cart_value_timeline[behaviorData.ecommerce.cart_value_timeline.length - 1];
-          
-          if (curr.item_count > prev.item_count) {
-            behaviorData.ecommerce.add_remove_patterns.push({ type: 'add', timestamp: Date.now() });
-            behaviorData.flags.shows_purchase_intent = true;
-          } else if (curr.item_count < prev.item_count) {
-            behaviorData.ecommerce.add_remove_patterns.push({ type: 'remove', timestamp: Date.now() });
-          }
+        // Detect changes
+        if (cart.items.length > lastItemCount) {
+          behaviorData.ecommerce.cart_interactions.add_events++;
+          behaviorData.ecommerce.cart_interactions.last_change = 'add';
+          behaviorData.flags.shows_purchase_intent = true;
+        } else if (cart.items.length < lastItemCount) {
+          behaviorData.ecommerce.cart_interactions.remove_events++;
+          behaviorData.ecommerce.cart_interactions.last_change = 'remove';
         }
+        
+        lastCartValue = cart.total_price;
+        lastItemCount = cart.items.length;
       } catch (err) {
         console.error('Cart polling error:', err);
       }
@@ -789,12 +757,6 @@ function initializeTracking() {
     // Poll cart every 10 seconds
     setInterval(pollCart, 10000);
     pollCart();
-    
-    // Track product views
-    const productElements = document.querySelectorAll('[data-product-id]');
-    productElements.forEach(el => {
-      visibilityObserver.observe(el);
-    });
   };
 
   // Helper to process queued events
@@ -858,8 +820,17 @@ function initializeTracking() {
     try {
       // Calculate derived metrics
       const totalTime = Date.now() - sessionStartTime;
-      behaviorData.attention.total_engaged_time = behaviorData.attention.active_time;
-      behaviorData.attention.reading_time = behaviorData.scroll.slow_scroll_time;
+      behaviorData.attention.total_engaged_time = behaviorData.attention.total_engaged_time || totalTime - behaviorData.attention.total_idle_time;
+      
+      // Determine scroll pattern
+      const scrollTimes = {
+        reading: behaviorData.scroll.time_reading,
+        skimming: behaviorData.scroll.time_skimming,
+        searching: behaviorData.scroll.time_searching
+      };
+      behaviorData.scroll.dominant_pattern = Object.keys(scrollTimes).reduce((a, b) => 
+        scrollTimes[a] > scrollTimes[b] ? a : b
+      );
       
       // Update flags based on behavior
       if (behaviorData.mouse.rage_clicks > 2 || behaviorData.mouse.acceleration_events > 10) {
@@ -867,38 +838,37 @@ function initializeTracking() {
       }
       
       // Price sensitivity based on hover patterns
-      const priceHovers = behaviorData.mouse.hover_events.price;
+      const priceHovers = behaviorData.mouse.hover_summary.price;
       if (priceHovers && (priceHovers.count > 3 || priceHovers.total_time > 5000)) {
         behaviorData.flags.is_price_sensitive = true;
       }
       
-      if (behaviorData.interactions.copy_events > 0 || behaviorData.interactions.selection_events > 5) {
+      // Research mode
+      if (behaviorData.interactions.copy_paste_events > 0 || 
+          behaviorData.scroll.time_reading > 30000) {
         behaviorData.flags.is_research_mode = true;
       }
       
-      // Comparison shopping if multiple product hovers
-      const productHovers = behaviorData.mouse.hover_events.product_image;
-      if (productHovers && productHovers.count > 5) {
+      // Comparison shopping
+      if (behaviorData.ecommerce.product_engagement.views > 5 ||
+          behaviorData.ecommerce.product_engagement.image_interactions > 10) {
         behaviorData.flags.is_comparison_shopping = true;
       }
       
-      // Clean up empty visibility data before saving
-      Object.keys(behaviorData.attention.element_visibility).forEach(key => {
-        const data = behaviorData.attention.element_visibility[key];
-        if (data.view_count === 0 || data.total_visible_time === 0) {
-          delete behaviorData.attention.element_visibility[key];
+      // Engagement level
+      const engagementScore = calculateEngagementScore();
+      if (engagementScore > 70) behaviorData.flags.engagement_level = 'high';
+      else if (engagementScore > 40) behaviorData.flags.engagement_level = 'medium';
+      else behaviorData.flags.engagement_level = 'low';
+      
+      // Clean up temporary data
+      Object.keys(behaviorData.attention.key_elements_viewed).forEach(key => {
+        const element = behaviorData.attention.key_elements_viewed[key];
+        if (element.last_visible_start) {
+          element.total_time += Date.now() - element.last_visible_start;
+          delete element.last_visible_start;
         }
       });
-      
-      // Limit FPS samples to last 20
-      if (behaviorData.technical.fps_samples.length > 20) {
-        behaviorData.technical.fps_samples = behaviorData.technical.fps_samples.slice(-20);
-      }
-      
-      // Limit mouse velocity samples to last 20
-      if (behaviorData.mouse.velocity_samples.length > 20) {
-        behaviorData.mouse.velocity_samples = behaviorData.mouse.velocity_samples.slice(-20);
-      }
       
       // Update session with behavior data
       const { error } = await supabaseClient
@@ -943,15 +913,15 @@ function initializeTracking() {
       // Device capabilities
       if (navigator.getBattery) {
         const battery = await navigator.getBattery();
-        behaviorData.technical.battery_level = battery.level;
+        behaviorData.technical.battery_level = Math.round(battery.level * 100) / 100;
       }
       
       if (navigator.connection) {
-        behaviorData.technical.connection_speed = navigator.connection.effectiveType;
+        behaviorData.technical.connection_type = navigator.connection.effectiveType;
       }
       
       if (performance.memory) {
-        behaviorData.technical.memory_usage = performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit;
+        behaviorData.technical.device_memory = Math.round(performance.memory.usedJSHeapSize / 1048576); // MB
       }
 
       // Create or update user record
@@ -1125,8 +1095,9 @@ function initializeTracking() {
     let score = 0;
     
     // Time-based engagement
-    if (behaviorData.attention.active_time > 30000) score += 20;
-    if (behaviorData.attention.reading_time > 10000) score += 15;
+    const engagedTime = Date.now() - sessionStartTime - behaviorData.attention.total_idle_time;
+    if (engagedTime > 30000) score += 20;
+    if (behaviorData.scroll.time_reading > 10000) score += 15;
     
     // Interaction-based engagement
     if (behaviorData.interactions.total_clicks > 5) score += 10;
@@ -1138,7 +1109,7 @@ function initializeTracking() {
     
     // E-commerce signals
     if (behaviorData.flags.shows_purchase_intent) score += 20;
-    if (behaviorData.ecommerce.cart_value_timeline.length > 0) score += 10;
+    if (behaviorData.ecommerce.cart_interactions.current_value > 0) score += 10;
     
     // Negative signals
     if (behaviorData.flags.is_frustrated) score -= 15;
