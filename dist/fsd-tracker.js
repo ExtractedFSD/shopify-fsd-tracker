@@ -1,10 +1,23 @@
-// FSD Tracker v3 with Location & Weather - Pandectes GDPR Integration
-// Debounce helper
+// FSD Tracker v4 - AI-Optimized with Behavior Aggregation & Enhanced Analytics
+// Includes GDPR compliance via Google Consent Mode/Pandectes
+
+// Helper functions
 function debounce(func, delay) {
   let timeout;
   return function (...args) {
     clearTimeout(timeout);
     timeout = setTimeout(() => func.apply(this, args), delay);
+  };
+}
+
+function throttle(func, limit) {
+  let inThrottle;
+  return function(...args) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
   };
 }
 
@@ -23,9 +36,7 @@ function getUTMParams() {
 function hasAnalyticsConsent() {
   // Check Google Consent Mode first
   if (typeof gtag !== 'undefined') {
-    // Check if analytics_storage is granted
     try {
-      // Google Consent Mode v2 check
       const consentState = window.dataLayer?.find(item => 
         item[0] === 'consent' && item[1] === 'default'
       );
@@ -34,7 +45,6 @@ function hasAnalyticsConsent() {
         return true;
       }
       
-      // Alternative check for consent update
       const consentUpdate = window.dataLayer?.find(item => 
         item[0] === 'consent' && item[1] === 'update'
       );
@@ -47,13 +57,13 @@ function hasAnalyticsConsent() {
     }
   }
   
-  // Fallback to checking Pandectes directly
+  // Fallback to Pandectes
   if (window.Pandectes) {
     return window.Pandectes.getConsent('analytics') === true || 
            window.Pandectes.getConsent('statistics') === true;
   }
   
-  // Final fallback to checking cookie
+  // Cookie fallback
   const cookies = document.cookie.split(';');
   for (let cookie of cookies) {
     const [name, value] = cookie.trim().split('=');
@@ -70,7 +80,7 @@ function hasAnalyticsConsent() {
   return false;
 }
 
-// Wait for consent via Google Consent Mode
+// Wait for consent
 function waitForConsent(callback) {
   if (hasAnalyticsConsent()) {
     callback();
@@ -80,24 +90,23 @@ function waitForConsent(callback) {
     window.dataLayer.push = function() {
       originalPush.apply(window.dataLayer, arguments);
       
-      // Check if this was a consent update
       const args = arguments[0];
       if (args && args[0] === 'consent' && args[1] === 'update') {
         if (args[2]?.analytics_storage === 'granted') {
-          window.dataLayer.push = originalPush; // Restore original
+          window.dataLayer.push = originalPush;
           callback();
         }
       }
     };
     
-    // Also listen for Pandectes events as backup
+    // Pandectes event listener
     window.addEventListener('pandectes:consent-given', function(e) {
       if (e.detail && (e.detail.analytics || e.detail.statistics)) {
         callback();
       }
     });
     
-    // Check periodically in case we missed the event
+    // Periodic check
     let checkCount = 0;
     const checkInterval = setInterval(() => {
       checkCount++;
@@ -105,7 +114,6 @@ function waitForConsent(callback) {
         clearInterval(checkInterval);
         callback();
       } else if (checkCount > 20) {
-        // Stop checking after 10 seconds
         clearInterval(checkInterval);
       }
     }, 500);
@@ -115,7 +123,6 @@ function waitForConsent(callback) {
 // Location and Weather API functions
 async function getLocationData() {
   try {
-    // Using ipapi.co free tier (1,000 requests/day)
     const response = await fetch('https://ipapi.co/json/');
     const data = await response.json();
     
@@ -144,9 +151,14 @@ async function getLocationData() {
 
 async function getWeatherData(latitude, longitude) {
   try {
-    // Using OpenWeatherMap free tier (1,000 requests/day)
     const API_KEY = 'd74971d78c4f001281fe256e8078fc87';
     const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=metric&appid=${API_KEY}`);
+    
+    if (!response.ok) {
+      console.error(`Weather API error: ${response.status} ${response.statusText}`);
+      throw new Error(`Weather API returned ${response.status}`);
+    }
+    
     const data = await response.json();
     
     const now = new Date();
@@ -154,13 +166,12 @@ async function getWeatherData(latitude, longitude) {
     const localDay = now.toLocaleDateString('en-US', { weekday: 'long' });
     const isWeekend = now.getDay() === 0 || now.getDay() === 6;
     
-    // Determine part of day
     let partOfDay = 'night';
     if (localHour >= 5 && localHour < 12) partOfDay = 'morning';
     else if (localHour >= 12 && localHour < 17) partOfDay = 'afternoon';
     else if (localHour >= 17 && localHour < 21) partOfDay = 'evening';
     
-    // Calculate days until payday (assuming last Friday of the month)
+    // Calculate days until payday (last Friday of month)
     function getLastFridayOfMonth(date) {
       const year = date.getFullYear();
       const month = date.getMonth();
@@ -175,16 +186,13 @@ async function getWeatherData(latitude, longitude) {
     
     let daysUntilPayday;
     if (now <= lastFriday) {
-      // Payday hasn't happened this month yet
       daysUntilPayday = Math.ceil((lastFriday - now) / (1000 * 60 * 60 * 24));
     } else {
-      // Payday passed, calculate to next month's last Friday
       daysUntilPayday = Math.ceil((nextMonthLastFriday - now) / (1000 * 60 * 60 * 24));
     }
     
     const isNearPayday = daysUntilPayday <= 3;
     
-    // Determine season (Northern Hemisphere)
     const month = now.getMonth();
     let season = 'winter';
     if (month >= 2 && month <= 4) season = 'spring';
@@ -205,7 +213,6 @@ async function getWeatherData(latitude, longitude) {
     };
   } catch (error) {
     console.error('Failed to get weather data:', error);
-    // Return time-based data even if weather API fails
     const now = new Date();
     const localHour = now.getHours();
     const localDay = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -216,21 +223,6 @@ async function getWeatherData(latitude, longitude) {
     else if (localHour >= 12 && localHour < 17) partOfDay = 'afternoon';
     else if (localHour >= 17 && localHour < 21) partOfDay = 'evening';
     
-    const currentDate = now.getDate();
-    let daysUntilPayday = 0;
-    if (currentDate <= 15) {
-      daysUntilPayday = 15 - currentDate;
-    } else {
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      daysUntilPayday = lastDay - currentDate;
-    }
-    
-    const month = now.getMonth();
-    let season = 'winter';
-    if (month >= 2 && month <= 4) season = 'spring';
-    else if (month >= 5 && month <= 7) season = 'summer';
-    else if (month >= 8 && month <= 10) season = 'autumn';
-    
     return {
       temperature_celsius: null,
       weather_condition: null,
@@ -239,43 +231,524 @@ async function getWeatherData(latitude, longitude) {
       local_day: localDay,
       part_of_day: partOfDay,
       is_weekend: isWeekend,
-      days_until_payday: daysUntilPayday,
-      is_near_payday: daysUntilPayday <= 3,
-      season: season
+      days_until_payday: null,
+      is_near_payday: null,
+      season: null
     };
   }
 }
 
 const utmParams = getUTMParams();
 
-// Main tracking function - only runs after consent is given
+// Main tracking function
 function initializeTracking() {
-  console.log("✅ Analytics consent granted - initializing FSD Tracker");
+  console.log("✅ Analytics consent granted - initializing FSD Tracker v4");
 
-  // Generate or retrieve persistent user ID
+  // User and session management
   let userId = localStorage.getItem("fsd_user_id");
   if (!userId) {
     userId = crypto.randomUUID();
     localStorage.setItem("fsd_user_id", userId);
   }
 
-  // Always generate a new session ID for each page load/session
+  // Always generate new session ID
   const sessionId = crypto.randomUUID();
   sessionStorage.setItem("fsd_session_id", sessionId);
 
-  // Track if this is a returning user
   const isReturning = !!localStorage.getItem("fsd_last_seen");
+  const sessionStartTime = Date.now();
 
-  // Initialize Supabase client
+  // Initialize Supabase
   let supabaseClient = null;
   let supabaseReady = false;
 
-  // Queue for events that occur before Supabase is ready
+  // Event queue for timeline events
   const eventQueue = [];
 
-  // Store location and weather data
+  // Location and weather data
   let locationData = null;
   let weatherData = null;
+
+  // Behavior aggregation data structure
+  const behaviorData = {
+    // Scroll behavior
+    scroll: {
+      total_distance: 0,
+      max_depth_percent: 0,
+      direction_changes: 0,
+      velocity_samples: [],
+      slow_scroll_time: 0,
+      fast_scroll_time: 0,
+      scroll_patterns: [],
+      sections_viewed: {}
+    },
+    
+    // Mouse/touch behavior
+    mouse: {
+      total_distance: 0,
+      velocity_samples: [],
+      acceleration_events: 0,
+      hover_events: {},
+      click_positions: [],
+      rage_clicks: 0,
+      dead_clicks: 0
+    },
+    
+    // Attention metrics
+    attention: {
+      total_engaged_time: 0,
+      idle_time: 0,
+      active_time: 0,
+      reading_time: 0,
+      time_to_first_interaction: null,
+      viewport_attention: {},
+      element_visibility: {}
+    },
+    
+    // Interaction patterns
+    interactions: {
+      total_clicks: 0,
+      total_hovers: 0,
+      form_interactions: 0,
+      form_abandonments: 0,
+      copy_events: 0,
+      paste_events: 0,
+      selection_events: 0,
+      zoom_events: 0
+    },
+    
+    // E-commerce specific
+    ecommerce: {
+      product_views: [],
+      cart_interactions: [],
+      cart_value_timeline: [],
+      add_remove_patterns: [],
+      checkout_progress: 0,
+      price_checks: 0,
+      size_guide_views: 0,
+      review_interactions: 0
+    },
+    
+    // Content engagement
+    content: {
+      images_viewed: {},
+      videos_played: {},
+      links_clicked: [],
+      external_link_clicks: 0,
+      internal_navigation: []
+    },
+    
+    // Technical metrics
+    technical: {
+      fps_samples: [],
+      load_time: 0,
+      time_to_interactive: 0,
+      connection_speed: null,
+      battery_level: null,
+      memory_usage: null
+    },
+    
+    // Behavioral flags
+    flags: {
+      is_engaged: false,
+      is_frustrated: false,
+      is_comparison_shopping: false,
+      is_research_mode: false,
+      shows_purchase_intent: false,
+      is_price_sensitive: false
+    }
+  };
+
+  // Track mouse position and movement
+  let lastMouseX = 0, lastMouseY = 0, mouseDistance = 0;
+  let lastMouseTime = Date.now();
+  
+  const handleMouseMove = throttle((e) => {
+    const currentTime = Date.now();
+    const timeDelta = currentTime - lastMouseTime;
+    
+    if (lastMouseX && lastMouseY && timeDelta > 0) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - lastMouseX, 2) + 
+        Math.pow(e.clientY - lastMouseY, 2)
+      );
+      
+      mouseDistance += distance;
+      behaviorData.mouse.total_distance += distance;
+      
+      // Calculate velocity
+      const velocity = distance / timeDelta;
+      behaviorData.mouse.velocity_samples.push({
+        velocity: velocity,
+        timestamp: currentTime
+      });
+      
+      // Keep only last 50 samples
+      if (behaviorData.mouse.velocity_samples.length > 50) {
+        behaviorData.mouse.velocity_samples.shift();
+      }
+      
+      // Detect sudden acceleration (potential frustration)
+      if (velocity > 2 && behaviorData.mouse.velocity_samples.length > 1) {
+        const prevVelocity = behaviorData.mouse.velocity_samples[behaviorData.mouse.velocity_samples.length - 2].velocity;
+        if (velocity > prevVelocity * 2) {
+          behaviorData.mouse.acceleration_events++;
+        }
+      }
+    }
+    
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    lastMouseTime = currentTime;
+  }, 50);
+
+  // Enhanced scroll tracking
+  let lastScrollY = window.scrollY;
+  let lastScrollTime = Date.now();
+  let scrollSamples = [];
+  
+  const handleScroll = throttle(() => {
+    const currentScrollY = window.scrollY;
+    const currentTime = Date.now();
+    const timeDelta = currentTime - lastScrollTime;
+    
+    if (timeDelta > 0) {
+      const distance = Math.abs(currentScrollY - lastScrollY);
+      const velocity = distance / timeDelta;
+      
+      behaviorData.scroll.total_distance += distance;
+      
+      // Track direction changes
+      if ((currentScrollY > lastScrollY && lastScrollY < window.scrollY) ||
+          (currentScrollY < lastScrollY && lastScrollY > window.scrollY)) {
+        behaviorData.scroll.direction_changes++;
+      }
+      
+      // Categorize scroll speed
+      if (velocity < 0.5) {
+        behaviorData.scroll.slow_scroll_time += timeDelta;
+      } else if (velocity > 2) {
+        behaviorData.scroll.fast_scroll_time += timeDelta;
+      }
+      
+      // Track scroll patterns
+      scrollSamples.push({
+        position: currentScrollY,
+        velocity: velocity,
+        timestamp: currentTime
+      });
+      
+      // Detect patterns every 10 samples
+      if (scrollSamples.length >= 10) {
+        const pattern = analyzeScrollPattern(scrollSamples);
+        behaviorData.scroll.scroll_patterns.push(pattern);
+        scrollSamples = [];
+      }
+      
+      // Update max scroll depth
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const scrollPercent = Math.round((currentScrollY / docHeight) * 100);
+      behaviorData.scroll.max_depth_percent = Math.max(behaviorData.scroll.max_depth_percent, scrollPercent);
+    }
+    
+    lastScrollY = currentScrollY;
+    lastScrollTime = currentTime;
+  }, 100);
+
+  // Analyze scroll patterns
+  function analyzeScrollPattern(samples) {
+    const avgVelocity = samples.reduce((sum, s) => sum + s.velocity, 0) / samples.length;
+    const velocityVariance = samples.reduce((sum, s) => sum + Math.pow(s.velocity - avgVelocity, 2), 0) / samples.length;
+    
+    let pattern = 'normal';
+    if (avgVelocity > 3) pattern = 'skimming';
+    else if (avgVelocity < 0.3) pattern = 'reading';
+    else if (velocityVariance > 2) pattern = 'searching';
+    else if (samples.filter(s => s.velocity > 5).length > 3) pattern = 'rage_scrolling';
+    
+    return {
+      type: pattern,
+      avg_velocity: avgVelocity,
+      variance: velocityVariance,
+      duration: samples[samples.length - 1].timestamp - samples[0].timestamp
+    };
+  }
+
+  // Intersection Observer for element visibility
+  const visibilityObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const element = entry.target;
+      const identifier = element.dataset.trackingId || element.className || element.tagName;
+      
+      if (!behaviorData.attention.element_visibility[identifier]) {
+        behaviorData.attention.element_visibility[identifier] = {
+          first_seen: null,
+          total_visible_time: 0,
+          last_visible_start: null,
+          view_count: 0
+        };
+      }
+      
+      const tracking = behaviorData.attention.element_visibility[identifier];
+      
+      if (entry.isIntersecting) {
+        if (!tracking.first_seen) {
+          tracking.first_seen = Date.now();
+        }
+        tracking.last_visible_start = Date.now();
+        tracking.view_count++;
+      } else if (tracking.last_visible_start) {
+        tracking.total_visible_time += Date.now() - tracking.last_visible_start;
+        tracking.last_visible_start = null;
+      }
+    });
+  }, {
+    threshold: [0, 0.25, 0.5, 0.75, 1.0]
+  });
+
+  // Track key elements
+  const trackElements = () => {
+    // Track product elements
+    document.querySelectorAll('.product-card, .product-image, .product-price, .product-title').forEach(el => {
+      visibilityObserver.observe(el);
+    });
+    
+    // Track CTAs
+    document.querySelectorAll('.btn, button, .cta, .add-to-cart, .checkout').forEach(el => {
+      visibilityObserver.observe(el);
+    });
+    
+    // Track content sections
+    document.querySelectorAll('section, .hero, .features, .testimonials, .pricing').forEach(el => {
+      visibilityObserver.observe(el);
+    });
+  };
+
+  // Enhanced click tracking
+  let lastClickTime = 0;
+  let clicksInSameArea = 0;
+  let lastClickX = 0, lastClickY = 0;
+  
+  const handleClick = (e) => {
+    const currentTime = Date.now();
+    const timeSinceLastClick = currentTime - lastClickTime;
+    
+    behaviorData.interactions.total_clicks++;
+    
+    // Track click position
+    behaviorData.mouse.click_positions.push({
+      x: e.clientX,
+      y: e.clientY,
+      target: e.target.tagName,
+      timestamp: currentTime
+    });
+    
+    // Detect rage clicks (multiple clicks in same area within 1 second)
+    const clickDistance = Math.sqrt(
+      Math.pow(e.clientX - lastClickX, 2) + 
+      Math.pow(e.clientY - lastClickY, 2)
+    );
+    
+    if (timeSinceLastClick < 1000 && clickDistance < 50) {
+      clicksInSameArea++;
+      if (clicksInSameArea >= 3) {
+        behaviorData.mouse.rage_clicks++;
+        behaviorData.flags.is_frustrated = true;
+      }
+    } else {
+      clicksInSameArea = 1;
+    }
+    
+    // Detect dead clicks (clicks with no effect)
+    const target = e.target;
+    if (!target.href && !target.onclick && !target.closest('a, button, input, select, textarea')) {
+      behaviorData.mouse.dead_clicks++;
+    }
+    
+    lastClickTime = currentTime;
+    lastClickX = e.clientX;
+    lastClickY = e.clientY;
+  };
+
+  // Track hover events
+  const hoverTracking = new Map();
+  
+  const handleMouseOver = (e) => {
+    const target = e.target;
+    const identifier = target.dataset.trackingId || target.className || target.tagName;
+    
+    if (!hoverTracking.has(target)) {
+      hoverTracking.set(target, {
+        identifier: identifier,
+        startTime: Date.now(),
+        totalTime: 0
+      });
+    }
+    
+    const tracking = hoverTracking.get(target);
+    tracking.startTime = Date.now();
+  };
+  
+  const handleMouseOut = (e) => {
+    const target = e.target;
+    const tracking = hoverTracking.get(target);
+    
+    if (tracking && tracking.startTime) {
+      const hoverTime = Date.now() - tracking.startTime;
+      tracking.totalTime += hoverTime;
+      
+      // Update behavior data
+      if (!behaviorData.mouse.hover_events[tracking.identifier]) {
+        behaviorData.mouse.hover_events[tracking.identifier] = {
+          count: 0,
+          total_time: 0,
+          max_time: 0
+        };
+      }
+      
+      const hoverData = behaviorData.mouse.hover_events[tracking.identifier];
+      hoverData.count++;
+      hoverData.total_time += hoverTime;
+      hoverData.max_time = Math.max(hoverData.max_time, hoverTime);
+      
+      behaviorData.interactions.total_hovers++;
+      
+      // Detect comparison shopping behavior
+      if (tracking.identifier.includes('product') && hoverData.count > 3) {
+        behaviorData.flags.is_comparison_shopping = true;
+      }
+    }
+  };
+
+  // Track copy/paste events
+  document.addEventListener('copy', () => {
+    behaviorData.interactions.copy_events++;
+    behaviorData.flags.is_research_mode = true;
+  });
+  
+  document.addEventListener('paste', () => {
+    behaviorData.interactions.paste_events++;
+  });
+  
+  // Track text selection
+  document.addEventListener('selectionchange', debounce(() => {
+    const selection = window.getSelection();
+    if (selection.toString().length > 0) {
+      behaviorData.interactions.selection_events++;
+    }
+  }, 500));
+
+  // Track zoom events
+  let lastScale = 1;
+  window.visualViewport?.addEventListener('resize', () => {
+    const currentScale = window.visualViewport.scale;
+    if (currentScale !== lastScale) {
+      behaviorData.interactions.zoom_events++;
+      lastScale = currentScale;
+    }
+  });
+
+  // Performance monitoring
+  const performanceObserver = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (entry.entryType === 'measure' && entry.name === 'fsd-fps') {
+        behaviorData.technical.fps_samples.push({
+          fps: Math.round(1000 / entry.duration),
+          timestamp: Date.now()
+        });
+      }
+    }
+  });
+  performanceObserver.observe({ entryTypes: ['measure'] });
+
+  // FPS tracking
+  let lastFrameTime = performance.now();
+  const trackFPS = () => {
+    const currentTime = performance.now();
+    performance.measure('fsd-fps', {
+      start: lastFrameTime,
+      end: currentTime
+    });
+    lastFrameTime = currentTime;
+    requestAnimationFrame(trackFPS);
+  };
+  requestAnimationFrame(trackFPS);
+
+  // Attention and idle tracking
+  let idleTimer = null;
+  let lastActivityTime = Date.now();
+  
+  const resetIdleTimer = () => {
+    const now = Date.now();
+    const idleTime = now - lastActivityTime;
+    
+    if (idleTime > 100) {
+      behaviorData.attention.idle_time += idleTime;
+    } else {
+      behaviorData.attention.active_time += idleTime;
+    }
+    
+    lastActivityTime = now;
+    behaviorData.flags.is_engaged = true;
+    
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      behaviorData.flags.is_engaged = false;
+    }, 30000); // 30 seconds of inactivity = not engaged
+  };
+
+  // Set up event listeners
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('scroll', handleScroll);
+  document.addEventListener('click', handleClick);
+  document.addEventListener('mouseover', handleMouseOver);
+  document.addEventListener('mouseout', handleMouseOut);
+  
+  ['mousedown', 'keydown', 'touchstart', 'scroll'].forEach(event => {
+    document.addEventListener(event, resetIdleTimer);
+  });
+
+  // E-commerce specific tracking
+  const trackEcommerce = () => {
+    // Track cart value changes
+    const pollCart = async () => {
+      try {
+        const response = await fetch('/cart.js');
+        const cart = await response.json();
+        
+        behaviorData.ecommerce.cart_value_timeline.push({
+          timestamp: Date.now(),
+          value: cart.total_price,
+          item_count: cart.items.length
+        });
+        
+        // Detect add/remove patterns
+        if (behaviorData.ecommerce.cart_value_timeline.length > 1) {
+          const prev = behaviorData.ecommerce.cart_value_timeline[behaviorData.ecommerce.cart_value_timeline.length - 2];
+          const curr = behaviorData.ecommerce.cart_value_timeline[behaviorData.ecommerce.cart_value_timeline.length - 1];
+          
+          if (curr.item_count > prev.item_count) {
+            behaviorData.ecommerce.add_remove_patterns.push({ type: 'add', timestamp: Date.now() });
+            behaviorData.flags.shows_purchase_intent = true;
+          } else if (curr.item_count < prev.item_count) {
+            behaviorData.ecommerce.add_remove_patterns.push({ type: 'remove', timestamp: Date.now() });
+          }
+        }
+      } catch (err) {
+        console.error('Cart polling error:', err);
+      }
+    };
+    
+    // Poll cart every 10 seconds
+    setInterval(pollCart, 10000);
+    pollCart();
+    
+    // Track product views
+    const productElements = document.querySelectorAll('[data-product-id]');
+    productElements.forEach(el => {
+      visibilityObserver.observe(el);
+    });
+  };
 
   // Helper to process queued events
   async function processEventQueue() {
@@ -291,7 +764,6 @@ function initializeTracking() {
       
       if (error) {
         console.error("❌ Failed to insert queued events:", error);
-        // Re-queue failed events
         eventQueue.push(...events);
       }
     } catch (err) {
@@ -300,7 +772,7 @@ function initializeTracking() {
     }
   }
 
-  // Helper to log timeline events
+  // Log significant timeline events only
   async function logEvent(eventType, message, metadata = {}) {
     const event = {
       user_id: userId,
@@ -332,57 +804,47 @@ function initializeTracking() {
     }
   }
 
-  // Core tracking object
-  const fsd = {
-    user_id: userId,
-    session_id: sessionId,
-    timestamp: new Date().toISOString(),
-    traffic: {
-      ...utmParams,
-      referrer: document.referrer || ""
-    },
-    device: {
-      device_type: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
-      os: navigator.platform,
-      browser: navigator.userAgent,
-      screen_width: window.innerWidth,
-      screen_height: window.innerHeight
-    },
-    shopify: {
-      product_viewed: window.location.pathname,
-      product_tags: window.meta?.product?.tags || [],
-      collection_viewed: window.location.pathname.includes("/collections/") 
-        ? window.location.pathname.split("/")[window.location.pathname.split("/").indexOf("collections") + 1] || null 
-        : null,
-      cart_status: "unknown",
-      currency: window.Shopify?.currency?.active || "USD",
-      language: navigator.language || "en"
-    },
-    behavior: {
-      scroll_depth_percent: 0,
-      idle_seconds: 0,
-      clicked_add_to_cart: false,
-      hovered_cta: false,
-      viewed_pages: [window.location.pathname],
-      last_scroll_percent: 0,
-      last_scroll_direction: null,
-      tab_visibility_changes: 0,
-      typed_into_fields: false,
-      seen_price: false
-    },
-    user_history: {
-      is_returning: isReturning,
-      last_seen: localStorage.getItem("fsd_last_seen") || null,
-      pages_viewed_last_session: JSON.parse(localStorage.getItem("fsd_last_pages") || "[]"),
-      last_session_cart_status: localStorage.getItem("fsd_last_cart_status") || null
+  // Update behavior data in session record
+  async function updateBehaviorData() {
+    if (!supabaseReady || !supabaseClient) return;
+    
+    try {
+      // Calculate derived metrics
+      const totalTime = Date.now() - sessionStartTime;
+      behaviorData.attention.total_engaged_time = behaviorData.attention.active_time;
+      behaviorData.attention.reading_time = behaviorData.scroll.slow_scroll_time;
+      
+      // Update flags based on behavior
+      if (behaviorData.mouse.rage_clicks > 2 || behaviorData.mouse.acceleration_events > 10) {
+        behaviorData.flags.is_frustrated = true;
+      }
+      
+      if (behaviorData.ecommerce.price_checks > 3) {
+        behaviorData.flags.is_price_sensitive = true;
+      }
+      
+      if (behaviorData.interactions.copy_events > 0 || behaviorData.interactions.selection_events > 5) {
+        behaviorData.flags.is_research_mode = true;
+      }
+      
+      // Update session with behavior data
+      const { error } = await supabaseClient
+        .from("fsd_sessions")
+        .update({
+          behavior_data: behaviorData,
+          last_behavior_update: new Date().toISOString()
+        })
+        .eq("session_id", sessionId);
+      
+      if (error) {
+        console.error("❌ Failed to update behavior data:", error);
+      } else {
+        console.log("✅ Behavior data updated");
+      }
+    } catch (err) {
+      console.error("❌ Error updating behavior data:", err);
     }
-  };
-
-  // Log session start
-  logEvent("session_start", `Session started on ${window.location.pathname}`, {
-    utm_params: utmParams,
-    referrer: document.referrer
-  });
+  }
 
   // Initialize Supabase connection
   async function initializeSupabase() {
@@ -405,21 +867,34 @@ function initializeTracking() {
         weatherData = await getWeatherData(null, null);
       }
 
+      // Device capabilities
+      if (navigator.getBattery) {
+        const battery = await navigator.getBattery();
+        behaviorData.technical.battery_level = battery.level;
+      }
+      
+      if (navigator.connection) {
+        behaviorData.technical.connection_speed = navigator.connection.effectiveType;
+      }
+      
+      if (performance.memory) {
+        behaviorData.technical.memory_usage = performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit;
+      }
+
       // Create or update user record
       const userData = {
         user_id: userId,
         last_seen: new Date().toISOString(),
         is_returning: isReturning,
-        device_type: fsd.device.device_type,
-        os: fsd.device.os,
-        browser: fsd.device.browser,
-        language: fsd.shopify.language,
-        screen_width: fsd.device.screen_width,
-        screen_height: fsd.device.screen_height,
-        currency: fsd.shopify.currency
+        device_type: /Mobi|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
+        os: navigator.platform,
+        browser: navigator.userAgent,
+        language: navigator.language || "en",
+        screen_width: window.innerWidth,
+        screen_height: window.innerHeight,
+        currency: window.Shopify?.currency?.active || "USD"
       };
 
-      // If new user, set first_seen
       if (!isReturning) {
         userData.first_seen = new Date().toISOString();
       }
@@ -434,36 +909,36 @@ function initializeTracking() {
         console.log("✅ User record updated");
       }
 
-      // Create session record with location and weather data
+      // Create session record
       const sessionData = {
         session_id: sessionId,
         user_id: userId,
-        timestamp: fsd.timestamp,
-        referrer: fsd.traffic.referrer,
-        utm_source: fsd.traffic.utm_source,
-        utm_medium: fsd.traffic.utm_medium,
-        utm_campaign: fsd.traffic.utm_campaign,
-        utm_term: fsd.traffic.utm_term,
-        utm_content: fsd.traffic.utm_content,
-        product_viewed: fsd.shopify.product_viewed,
-        product_tags: fsd.shopify.product_tags,
-        collection_viewed: fsd.shopify.collection_viewed,
-        last_session_cart_status: fsd.user_history.last_session_cart_status,
-        pages_viewed_last_session: fsd.user_history.pages_viewed_last_session,
-        device_type: fsd.device.device_type,
-        os: fsd.device.os,
-        browser: fsd.device.browser,
-        language: fsd.shopify.language,
-        screen_width: fsd.device.screen_width,
-        screen_height: fsd.device.screen_height,
-        currency: fsd.shopify.currency,
-        // Location data
+        timestamp: new Date().toISOString(),
+        referrer: document.referrer || null,
+        utm_source: utmParams.utm_source,
+        utm_medium: utmParams.utm_medium,
+        utm_campaign: utmParams.utm_campaign,
+        utm_term: utmParams.utm_term,
+        utm_content: utmParams.utm_content,
+        product_viewed: window.location.pathname,
+        product_tags: window.meta?.product?.tags || [],
+        collection_viewed: window.location.pathname.includes("/collections/") 
+          ? window.location.pathname.split("/")[window.location.pathname.split("/").indexOf("collections") + 1] || null 
+          : null,
+        last_session_cart_status: localStorage.getItem("fsd_last_cart_status") || null,
+        pages_viewed_last_session: JSON.parse(localStorage.getItem("fsd_last_pages") || "[]"),
+        device_type: userData.device_type,
+        os: userData.os,
+        browser: userData.browser,
+        language: userData.language,
+        screen_width: userData.screen_width,
+        screen_height: userData.screen_height,
+        currency: userData.currency,
         country: locationData?.country,
         region: locationData?.region,
         city: locationData?.city,
         postal_code: locationData?.postal_code,
         timezone: locationData?.timezone,
-        // Weather and temporal data
         temperature_celsius: weatherData?.temperature_celsius,
         weather_condition: weatherData?.weather_condition,
         humidity: weatherData?.humidity,
@@ -473,7 +948,8 @@ function initializeTracking() {
         is_weekend: weatherData?.is_weekend,
         days_until_payday: weatherData?.days_until_payday,
         is_near_payday: weatherData?.is_near_payday,
-        season: weatherData?.season
+        season: weatherData?.season,
+        behavior_data: behaviorData
       };
 
       const { error: sessionError } = await supabaseClient
@@ -487,8 +963,12 @@ function initializeTracking() {
         console.log("📍 Location:", locationData?.city, locationData?.country);
         console.log("🌤️ Weather:", weatherData?.temperature_celsius + "°C", weatherData?.weather_condition);
         supabaseReady = true;
+        
         // Process any queued events
         await processEventQueue();
+        
+        // Start behavior data updates
+        setInterval(updateBehaviorData, 30000); // Update every 30 seconds
       }
 
     } catch (err) {
@@ -496,244 +976,131 @@ function initializeTracking() {
     }
   }
 
-  // Wait for window load to initialize Supabase
-  if (document.readyState === 'complete') {
-    initializeSupabase();
-  } else {
-    window.addEventListener("load", initializeSupabase);
-  }
+  // Log significant events only
+  logEvent("session_start", `Session started on ${window.location.pathname}`, {
+    utm_params: utmParams,
+    referrer: document.referrer
+  });
 
-  // Scroll tracking with direction in 10% increments
-  let lastLoggedScroll = 0;
-  let lastScrollTop = window.scrollY;
-
-  const handleScroll = () => {
-    const scrollTop = window.scrollY;
-    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-    const percent = Math.round((scrollTop / docHeight) * 100);
-    const direction = scrollTop > lastScrollTop ? "down" : scrollTop < lastScrollTop ? "up" : null;
-
-    if (!fsd.behavior.seen_price && percent >= 40) {
-      fsd.behavior.seen_price = true;
-      logEvent("interaction", "Viewed price section", { scroll_percent: percent });
+  // Track page visibility
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      logEvent("visibility", "Tab hidden");
+    } else {
+      logEvent("visibility", "Tab became active");
     }
+  });
 
-    const scrollIncrement = 10;
-    if (direction && Math.abs(percent - lastLoggedScroll) >= scrollIncrement) {
-      logEvent("scroll", `Scrolled ${direction} to ${percent}%`, { 
-        direction: direction,
-        percent: percent 
+  // Track significant clicks
+  document.addEventListener("click", (e) => {
+    const target = e.target;
+    
+    // Only log clicks on important elements
+    if (target.closest('.add-to-cart, .checkout, .buy-now, .product-option')) {
+      logEvent("click", `Clicked: ${target.textContent || target.className}`, {
+        element: target.tagName,
+        class: target.className,
+        id: target.id
       });
-      fsd.behavior.scroll_depth_percent = Math.max(fsd.behavior.scroll_depth_percent, percent);
-      fsd.behavior.last_scroll_percent = percent;
-      fsd.behavior.last_scroll_direction = direction;
-      lastLoggedScroll = percent;
     }
+  });
 
-    lastScrollTop = scrollTop;
-  };
-
-  window.addEventListener("scroll", debounce(handleScroll, 200));
-
-  // Track idle time
-  let idleCounter = 0;
-  const idleInterval = setInterval(() => {
-    idleCounter++;
-    fsd.behavior.idle_seconds++;
-    if (idleCounter === 10) {
-      logEvent("behavior", "User idle for 10 seconds", { idle_seconds: 10 });
-    } else if (idleCounter === 30) {
-      logEvent("behavior", "User idle for 30 seconds", { idle_seconds: 30 });
-    }
-  }, 1000);
-
-  ["mousemove", "keydown", "scroll", "touchstart"].forEach(evt =>
-    document.addEventListener(evt, () => {
-      idleCounter = 0;
-    })
-  );
-
-  // Track cart status and changes
-  let previousCartSnapshot = "";
-  const pollCart = async () => {
+  // Track cart changes
+  let lastCartState = null;
+  const trackCartChanges = async () => {
     try {
-      const response = await fetch("/cart.js");
-      const data = await response.json();
+      const response = await fetch('/cart.js');
+      const cart = await response.json();
+      const cartState = JSON.stringify(cart.items.map(item => `${item.id}-${item.quantity}`));
       
-      const previousStatus = fsd.shopify.cart_status;
-      const currentItemCount = data.items.length;
-      fsd.shopify.cart_status = currentItemCount > 0 ? "has_items" : "empty";
-
-      const newSnapshot = JSON.stringify(data.items.map(item => `${item.id}-${item.quantity}`));
-      if (newSnapshot !== previousCartSnapshot) {
-        if (data.items.length > 0) {
-          const lastItem = data.items[data.items.length - 1];
-          if (lastItem && lastItem.product_title) {
-            logEvent("cart_update", `Product added/updated: ${lastItem.product_title}`, {
-              product_id: lastItem.product_id,
-              variant_id: lastItem.variant_id,
-              quantity: lastItem.quantity,
-              price: lastItem.price
-            });
-          }
-        } else {
-          logEvent("cart_update", "All products removed from cart", {
-            previous_items: previousCartSnapshot
-          });
-        }
-        previousCartSnapshot = newSnapshot;
-      }
-
-      if (previousStatus !== fsd.shopify.cart_status) {
-        logEvent("cart_status", `Cart status changed to: ${fsd.shopify.cart_status}`, {
-          item_count: currentItemCount,
-          total_price: data.total_price
+      if (lastCartState && cartState !== lastCartState) {
+        logEvent("cart_update", "Cart contents changed", {
+          item_count: cart.items.length,
+          total_price: cart.total_price
         });
       }
+      
+      lastCartState = cartState;
     } catch (err) {
-      console.error("Failed to poll cart:", err);
+      console.error("Cart tracking error:", err);
     }
   };
   
-  // Initial cart poll
-  pollCart();
-  // Poll less frequently - every 30 seconds instead of 10
-  const cartInterval = setInterval(pollCart, 30000);
+  setInterval(trackCartChanges, 5000);
 
-  // Custom button tracker mapping
-  const buttonMap = {
-    ".product-optionnew": { name: "Product Options", event_type: "product_option_click" },
-    ".orderbtn": { name: "Add to Cart", event_type: "add_to_cart_click" }
-  };
-
-  // Track clicks
-  document.addEventListener("click", function (e) {
-    Object.keys(buttonMap).forEach(selector => {
-      const element = e.target.closest(selector);
-      if (element) {
-        const config = buttonMap[selector];
-        logEvent("click", config.name, {
-          element_class: selector,
-          element_text: element.textContent?.trim() || "",
-          product_title: document.querySelector(".product-title")?.textContent || "Unknown"
-        });
-        
-        if (selector === ".orderbtn") {
-          fsd.behavior.clicked_add_to_cart = true;
-        }
-      }
-    });
-  });
-
-  // Track hovers with debouncing
-  const hoverDelays = {};
-  const setupHoverTracking = () => {
-    Object.keys(buttonMap).forEach(selector => {
-      document.querySelectorAll(selector).forEach((el) => {
-        const config = buttonMap[selector];
-        const trackHover = () => {
-          const now = Date.now();
-          if (!hoverDelays[selector] || now - hoverDelays[selector] > 3000) {
-            logEvent("hover", config.name, {
-              element_class: selector,
-              hover_count: (hoverDelays[selector] ? 2 : 1)
-            });
-            fsd.behavior.hovered_cta = true;
-            hoverDelays[selector] = now;
-          }
-        };
-        el.addEventListener("mouseenter", trackHover);
-        el.addEventListener("touchstart", trackHover, { passive: true });
-      });
-    });
-  };
-
-  // Set up hover tracking when DOM is ready
-  if (document.readyState === 'complete') {
-    setupHoverTracking();
-  } else {
-    window.addEventListener("load", setupHoverTracking);
-  }
-
-  // Track page visibility changes
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      fsd.behavior.tab_visibility_changes++;
-      logEvent("visibility", "Tab hidden", { 
-        visibility_changes: fsd.behavior.tab_visibility_changes 
-      });
-    } else {
-      logEvent("visibility", "Tab became active", {
-        visibility_changes: fsd.behavior.tab_visibility_changes
-      });
-    }
-  });
-
-  // Track form interactions
-  const setupFormTracking = () => {
-    document.querySelectorAll("input, textarea").forEach((input) => {
-      input.addEventListener("input", () => {
-        if (!fsd.behavior.typed_into_fields) {
-          fsd.behavior.typed_into_fields = true;
-          logEvent("form_interaction", "User typed into a field", {
-            field_type: input.type,
-            field_name: input.name || "unnamed"
-          });
-        }
-      }, { once: true });
-    });
-  };
-
-  if (document.readyState === 'complete') {
-    setupFormTracking();
-  } else {
-    window.addEventListener("load", setupFormTracking);
-  }
-
-  // Clean up and save state before unload
+  // Clean up before unload
   window.addEventListener("beforeunload", () => {
-    // Save user state
-    localStorage.setItem("fsd_last_pages", JSON.stringify(fsd.behavior.viewed_pages));
-    localStorage.setItem("fsd_last_cart_status", fsd.shopify.cart_status);
+    // Final behavior data update
+    updateBehaviorData();
+    
+    // Save state
+    localStorage.setItem("fsd_last_pages", JSON.stringify([window.location.pathname]));
+    localStorage.setItem("fsd_last_cart_status", lastCartState ? "has_items" : "empty");
     localStorage.setItem("fsd_last_seen", new Date().toISOString());
     
     // Log session end
     logEvent("session_end", "User leaving site", {
-      session_duration_seconds: Math.round((Date.now() - new Date(fsd.timestamp).getTime()) / 1000),
-      max_scroll_depth: fsd.behavior.scroll_depth_percent,
-      total_idle_seconds: fsd.behavior.idle_seconds,
-      pages_viewed: fsd.behavior.viewed_pages.length
+      session_duration: Math.round((Date.now() - sessionStartTime) / 1000),
+      max_scroll_depth: behaviorData.scroll.max_depth_percent,
+      total_clicks: behaviorData.interactions.total_clicks,
+      engagement_score: calculateEngagementScore()
     });
-
-    // Clean up intervals
-    clearInterval(idleInterval);
-    clearInterval(cartInterval);
   });
 
-  // Track page navigation (for SPAs)
-  let currentPath = window.location.pathname;
-  const checkNavigation = () => {
-    if (window.location.pathname !== currentPath) {
-      currentPath = window.location.pathname;
-      fsd.behavior.viewed_pages.push(currentPath);
-      logEvent("navigation", `Navigated to ${currentPath}`, {
-        from_page: fsd.behavior.viewed_pages[fsd.behavior.viewed_pages.length - 2] || "direct",
-        to_page: currentPath
-      });
-    }
-  };
-  setInterval(checkNavigation, 1000);
+  // Calculate engagement score
+  function calculateEngagementScore() {
+    let score = 0;
+    
+    // Time-based engagement
+    if (behaviorData.attention.active_time > 30000) score += 20;
+    if (behaviorData.attention.reading_time > 10000) score += 15;
+    
+    // Interaction-based engagement
+    if (behaviorData.interactions.total_clicks > 5) score += 10;
+    if (behaviorData.interactions.total_hovers > 10) score += 5;
+    
+    // Depth of exploration
+    if (behaviorData.scroll.max_depth_percent > 50) score += 10;
+    if (behaviorData.scroll.max_depth_percent > 80) score += 10;
+    
+    // E-commerce signals
+    if (behaviorData.flags.shows_purchase_intent) score += 20;
+    if (behaviorData.ecommerce.cart_value_timeline.length > 0) score += 10;
+    
+    // Negative signals
+    if (behaviorData.flags.is_frustrated) score -= 15;
+    if (behaviorData.mouse.rage_clicks > 0) score -= 10;
+    
+    return Math.max(0, Math.min(100, score));
+  }
+
+  // Initialize tracking
+  if (document.readyState === 'complete') {
+    initializeSupabase();
+    trackElements();
+    trackEcommerce();
+  } else {
+    window.addEventListener('load', () => {
+      initializeSupabase();
+      trackElements();
+      trackEcommerce();
+    });
+  }
 
   // Expose for debugging
-  window.__fsd = fsd;
-  window.__fsd_logEvent = logEvent;
-  window.__fsd_locationData = locationData;
-  window.__fsd_weatherData = weatherData;
-  console.log("✅ FSD Tracker v3 Initialized");
+  window.__fsd = {
+    userId,
+    sessionId,
+    behaviorData,
+    locationData,
+    weatherData,
+    getEngagementScore: calculateEngagementScore,
+    logEvent
+  };
+  
+  console.log("✅ FSD Tracker v4 Initialized - AI-Optimized");
 }
 
-// Start the tracker only after consent is given
+// Start tracking after consent
 waitForConsent(initializeTracking);
-
-// Log that we're waiting for consent
-console.log("⏳ FSD Tracker loaded - waiting for analytics consent via Pandectes");
+console.log("⏳ FSD Tracker v4 loaded - waiting for analytics consent");
