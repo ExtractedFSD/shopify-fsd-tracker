@@ -478,7 +478,10 @@ function initializeTracking() {
   const visibilityObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       const element = entry.target;
-      const identifier = element.dataset.trackingId || element.className || element.tagName;
+      const identifier = element.dataset.trackingId;
+      
+      // Skip if no tracking ID set
+      if (!identifier) return;
       
       if (!behaviorData.attention.element_visibility[identifier]) {
         behaviorData.attention.element_visibility[identifier] = {
@@ -508,19 +511,38 @@ function initializeTracking() {
 
   // Track key elements
   const trackElements = () => {
-    // Track product elements
-    document.querySelectorAll('.product-card, .product-image, .product-price, .product-title').forEach(el => {
-      visibilityObserver.observe(el);
-    });
+    // Define what elements to track with meaningful identifiers
+    const elementsToTrack = [
+      // Product elements
+      { selector: '.product-card', id: 'product_card' },
+      { selector: '.product-image', id: 'product_image' },
+      { selector: '.product-price, .price', id: 'price' },
+      { selector: '.product-title', id: 'product_title' },
+      
+      // CTAs
+      { selector: '.add-to-cart, .orderbtn, [data-add-to-cart]', id: 'add_to_cart' },
+      { selector: '.checkout, .checkout-button', id: 'checkout' },
+      { selector: '.buy-now', id: 'buy_now' },
+      
+      // Content sections
+      { selector: '.hero, #hero', id: 'hero_section' },
+      { selector: '.features, #features', id: 'features_section' },
+      { selector: '.testimonials, #testimonials, .reviews', id: 'reviews_section' },
+      { selector: '.pricing, #pricing', id: 'pricing_section' },
+      
+      // E-commerce specific
+      { selector: '.size-guide, .sizing-chart', id: 'size_guide' },
+      { selector: '.shipping-info', id: 'shipping_info' },
+      { selector: '.product-description', id: 'product_description' },
+      { selector: '.product-specifications', id: 'specifications' }
+    ];
     
-    // Track CTAs
-    document.querySelectorAll('.btn, button, .cta, .add-to-cart, .checkout').forEach(el => {
-      visibilityObserver.observe(el);
-    });
-    
-    // Track content sections
-    document.querySelectorAll('section, .hero, .features, .testimonials, .pricing').forEach(el => {
-      visibilityObserver.observe(el);
+    elementsToTrack.forEach(({ selector, id }) => {
+      document.querySelectorAll(selector).forEach((el, index) => {
+        // Set a meaningful tracking ID
+        el.dataset.trackingId = index > 0 ? `${id}_${index}` : id;
+        visibilityObserver.observe(el);
+      });
     });
   };
 
@@ -825,6 +847,24 @@ function initializeTracking() {
       
       if (behaviorData.interactions.copy_events > 0 || behaviorData.interactions.selection_events > 5) {
         behaviorData.flags.is_research_mode = true;
+      }
+      
+      // Clean up empty visibility data before saving
+      Object.keys(behaviorData.attention.element_visibility).forEach(key => {
+        const data = behaviorData.attention.element_visibility[key];
+        if (data.view_count === 0 || data.total_visible_time === 0) {
+          delete behaviorData.attention.element_visibility[key];
+        }
+      });
+      
+      // Limit FPS samples to last 20
+      if (behaviorData.technical.fps_samples.length > 20) {
+        behaviorData.technical.fps_samples = behaviorData.technical.fps_samples.slice(-20);
+      }
+      
+      // Limit mouse velocity samples to last 20
+      if (behaviorData.mouse.velocity_samples.length > 20) {
+        behaviorData.mouse.velocity_samples = behaviorData.mouse.velocity_samples.slice(-20);
       }
       
       // Update session with behavior data
