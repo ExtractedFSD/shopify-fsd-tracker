@@ -438,25 +438,6 @@ function initializeTracking() {
     lastScrollTime = currentTime;
   }, 100);
 
-  // Analyze scroll patterns
-  function analyzeScrollPattern(samples) {
-    const avgVelocity = samples.reduce((sum, s) => sum + s.velocity, 0) / samples.length;
-    const velocityVariance = samples.reduce((sum, s) => sum + Math.pow(s.velocity - avgVelocity, 2), 0) / samples.length;
-    
-    let pattern = 'normal';
-    if (avgVelocity > 3) pattern = 'skimming';
-    else if (avgVelocity < 0.3) pattern = 'reading';
-    else if (velocityVariance > 2) pattern = 'searching';
-    else if (samples.filter(s => s.velocity > 5).length > 3) pattern = 'rage_scrolling';
-    
-    return {
-      type: pattern,
-      avg_velocity: avgVelocity,
-      variance: velocityVariance,
-      duration: samples[samples.length - 1].timestamp - samples[0].timestamp
-    };
-  }
-
   // Intersection Observer for element visibility - simplified
   const visibilityObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -613,12 +594,12 @@ function initializeTracking() {
     const target = e.target;
     const tracking = hoverTracking.get(target);
     
-    if (tracking && tracking.startTime) {
+    if (tracking && tracking.startTime && tracking.category) {
       const hoverTime = Date.now() - tracking.startTime;
       
       // Initialize category if doesn't exist
-      if (!behaviorData.mouse.hover_events[tracking.category]) {
-        behaviorData.mouse.hover_events[tracking.category] = {
+      if (!behaviorData.mouse.hover_summary[tracking.category]) {
+        behaviorData.mouse.hover_summary[tracking.category] = {
           count: 0,
           total_time: 0,
           avg_time: 0,
@@ -664,33 +645,6 @@ function initializeTracking() {
   document.addEventListener('paste', () => {
     behaviorData.interactions.copy_paste_events++;
   });
-
-  // Performance monitoring - simplified
-  let fpsSum = 0;
-  let fpsCount = 0;
-  let lastFrameTime = performance.now();
-  
-  const trackFPS = () => {
-    const currentTime = performance.now();
-    const fps = Math.round(1000 / (currentTime - lastFrameTime));
-    
-    fpsSum += fps;
-    fpsCount++;
-    
-    // Update average FPS every 60 frames
-    if (fpsCount >= 60) {
-      behaviorData.technical.avg_fps = Math.round(fpsSum / fpsCount);
-      if (behaviorData.technical.avg_fps < 30) {
-        behaviorData.technical.low_fps_events++;
-      }
-      fpsSum = 0;
-      fpsCount = 0;
-    }
-    
-    lastFrameTime = currentTime;
-    requestAnimationFrame(trackFPS);
-  };
-  requestAnimationFrame(trackFPS);
 
   // Attention and idle tracking - simplified
   let lastActivityTime = Date.now();
@@ -759,6 +713,33 @@ function initializeTracking() {
     setInterval(pollCart, 10000);
     pollCart();
   };
+
+  // Performance monitoring - simplified
+  let fpsSum = 0;
+  let fpsCount = 0;
+  let lastFrameTime = performance.now();
+  
+  const trackFPS = () => {
+    const currentTime = performance.now();
+    const fps = Math.round(1000 / (currentTime - lastFrameTime));
+    
+    fpsSum += fps;
+    fpsCount++;
+    
+    // Update average FPS every 60 frames
+    if (fpsCount >= 60) {
+      behaviorData.technical.avg_fps = Math.round(fpsSum / fpsCount);
+      if (behaviorData.technical.avg_fps < 30) {
+        behaviorData.technical.low_fps_events++;
+      }
+      fpsSum = 0;
+      fpsCount = 0;
+    }
+    
+    lastFrameTime = currentTime;
+    requestAnimationFrame(trackFPS);
+  };
+  requestAnimationFrame(trackFPS);
 
   // Helper to process queued events
   async function processEventQueue() {
