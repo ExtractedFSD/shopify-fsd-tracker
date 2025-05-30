@@ -1078,6 +1078,7 @@ setInterval(updateBehaviorData, 30000); // Update every 30 seconds
 } catch (err) {
   console.error("❌ Failed to initialize tracking data:", err);
 }
+} 
   
   // Log significant events only
   logEvent("session_start", `Session started on ${window.location.pathname}`, {
