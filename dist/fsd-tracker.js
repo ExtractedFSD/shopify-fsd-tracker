@@ -943,6 +943,11 @@ async function initializeSupabase() {
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlaGJkcHFxeWZucXRodmd5cWhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NDMxNTMsImV4cCI6MjA2NDAxOTE1M30.1Cd1VCSyEJk1Dfr17ZjNVmsMt0oj8z8h2HBy7_oiEfY"
     );
 
+     } catch (err) {
+    console.error("❌ Failed to load Supabase:", err);
+    return;
+    }
+  
     try {
       // Get location and weather data
       locationData = await getLocationData();
@@ -1071,8 +1076,7 @@ await processEventQueue();
 setInterval(updateBehaviorData, 30000); // Update every 30 seconds
 
 } catch (err) {
-  console.error("❌ Supabase initialization error:", err);
-}
+  console.error("❌ Failed to initialize tracking data:", err);
 }
   
   // Log significant events only
