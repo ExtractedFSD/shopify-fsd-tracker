@@ -32,6 +32,35 @@ function getUTMParams() {
   };
 }
 
+// Dynamically load Supabase if not already loaded
+function loadSupabase() {
+  return new Promise((resolve, reject) => {
+    // Check if already loaded
+    if (typeof window.supabase !== 'undefined') {
+      resolve();
+      return;
+    }
+    
+    // Create script element
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js';
+    script.async = true;
+    
+    script.onload = () => {
+      console.log('✅ Supabase library loaded');
+      resolve();
+    };
+    
+    script.onerror = () => {
+      console.error('❌ Failed to load Supabase library');
+      reject(new Error('Failed to load Supabase'));
+    };
+    
+    // Add to document
+    document.head.appendChild(script);
+  });
+}
+
 // GDPR Consent Check - Google Consent Mode & Pandectes Integration
 function hasAnalyticsConsent() {
   // Check Google Consent Mode first
@@ -251,9 +280,32 @@ function initializeTracking() {
     localStorage.setItem("fsd_user_id", userId);
   }
 
-  // Always generate new session ID
-  const sessionId = crypto.randomUUID();
-  sessionStorage.setItem("fsd_session_id", sessionId);
+  // Use time-based session that persists across pages
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+let sessionId;
+const storedSession = sessionStorage.getItem('fsd_session_data');
+
+if (storedSession) {
+  const data = JSON.parse(storedSession);
+  const age = Date.now() - data.timestamp;
+  
+  if (age < SESSION_TIMEOUT) {
+    // Continue existing session
+    sessionId = data.sessionId;
+  } else {
+    // Session expired, create new one
+    sessionId = crypto.randomUUID();
+  }
+} else {
+  // First page in session
+  sessionId = crypto.randomUUID();
+}
+
+// Update session timestamp
+sessionStorage.setItem('fsd_session_data', JSON.stringify({
+  sessionId,
+  timestamp: Date.now()
+}));
 
   const isReturning = !!localStorage.getItem("fsd_last_seen");
   const sessionStartTime = Date.now();
@@ -876,9 +928,13 @@ function initializeTracking() {
   }
 
   // Initialize Supabase connection
-  async function initializeSupabase() {
+async function initializeSupabase() {
+  try {
+    // Load Supabase if needed
+    await loadSupabase();
+    
     if (typeof window.supabase === "undefined") {
-      console.error("❌ Supabase library not loaded!");
+      console.error("❌ Supabase library failed to initialize!");
       return;
     }
 
@@ -981,35 +1037,57 @@ function initializeTracking() {
         behavior_data: behaviorData
       };
 
-      const { error: sessionError } = await supabaseClient
-        .from("fsd_sessions")
-        .insert([sessionData]);
+     // Check if session already exists
+const { data: existingSession } = await supabaseClient
+  .from("fsd_sessions")
+  .select("session_id")
+  .eq("session_id", sessionId)
+  .single();
 
-      if (sessionError) {
-        console.error("❌ Failed to create session:", sessionError);
-      } else {
-        console.log("✅ Session record created");
-        console.log("📍 Location:", locationData?.city, locationData?.country);
-        console.log("🌤️ Weather:", weatherData?.temperature_celsius + "°C", weatherData?.weather_condition);
-        supabaseReady = true;
-        
-        // Process any queued events
-        await processEventQueue();
-        
-        // Start behavior data updates
-        setInterval(updateBehaviorData, 30000); // Update every 30 seconds
-      }
-
-    } catch (err) {
-      console.error("❌ Supabase initialization error:", err);
-    }
+if (!existingSession) {
+  // Only create if doesn't exist
+  const { error: sessionError } = await supabaseClient
+    .from("fsd_sessions")
+    .insert([sessionData]);
+    
+  if (sessionError) {
+    console.error("❌ Failed to create session:", sessionError);
+  } else {
+    console.log("✅ Session record created");
+    console.log("📍 Location:", locationData?.city, locationData?.country);
+    console.log("🌤️ Weather:", weatherData?.temperature_celsius + "°C", weatherData?.weather_condition);
   }
+} else {
+  console.log("✅ Continuing existing session");
+}
 
+// This part should run regardless of whether session is new or existing
+supabaseReady = true;
+
+// Process any queued events
+await processEventQueue();
+
+// Start behavior data updates
+setInterval(updateBehaviorData, 30000); // Update every 30 seconds
+
+} catch (err) {
+  console.error("❌ Supabase initialization error:", err);
+}
+    
   // Log significant events only
   logEvent("session_start", `Session started on ${window.location.pathname}`, {
     utm_params: utmParams,
     referrer: document.referrer
   });
+
+  // Track page navigation
+const isInternalNavigation = document.referrer && document.referrer.includes(window.location.origin);
+logEvent("page_view", `Viewed ${window.location.pathname}`, {
+  from_page: isInternalNavigation ? new URL(document.referrer).pathname : 'external',
+  to_page: window.location.pathname,
+  page_title: document.title,
+  is_internal_navigation: isInternalNavigation
+});
 
   // Track page visibility
   document.addEventListener("visibilitychange", () => {
