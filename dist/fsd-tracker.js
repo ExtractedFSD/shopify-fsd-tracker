@@ -1042,14 +1042,13 @@ async function initializeSupabase() {
         behavior_data: behaviorData
       };
 
-     // Check if session already exists
-const { data: existingSession } = await supabaseClient
+    // Check if session already exists
+const { data: existingSession, error: checkError } = await supabaseClient
   .from("fsd_sessions")
   .select("session_id")
-  .eq("session_id", sessionId)
-  .single();
+  .eq("session_id", sessionId);
 
-if (!existingSession) {
+if (!checkError && (!existingSession || existingSession.length === 0)) {
   // Only create if doesn't exist
   const { error: sessionError } = await supabaseClient
     .from("fsd_sessions")
