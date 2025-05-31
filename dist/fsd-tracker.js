@@ -309,7 +309,8 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
 
   const isReturning = !!localStorage.getItem("fsd_last_seen");
   const sessionStartTime = Date.now();
-
+  let lastActivityTime = Date.now(); 
+  
   // Initialize Supabase
   let supabaseClient = null;
   let supabaseReady = false;
@@ -401,7 +402,10 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
       is_research_mode: false,
       shows_purchase_intent: false,
       is_price_sensitive: false,
-      engagement_level: 'low' // low, medium, high
+      engagement_level: 'low', 
+      checkout_intent: false, 
+      abandonment_risk_logged: false, 
+      high_abandonment_risk: false 
     }
   };
 
@@ -805,7 +809,7 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
     // Detect changes
     if (itemCount > lastItemCount) {
       behaviorData.ecommerce.cart_interactions.add_events++;
-      behaviorData.ecommerce.cart_interactions.last_change = 'add';
+      behaviorData.ecommerce.cart_interactions.last_change = new Date().toISOString();
       behaviorData.flags.shows_purchase_intent = true;
       
       logEvent("cart_updated", "Item added to cart", {
@@ -816,7 +820,7 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
       });
     } else if (itemCount < lastItemCount) {
       behaviorData.ecommerce.cart_interactions.remove_events++;
-      behaviorData.ecommerce.cart_interactions.last_change = 'remove';
+      behaviorData.ecommerce.cart_interactions.last_change = new Date().toISOString();
       
       logEvent("cart_updated", "Item removed from cart", {
         cart_value: currentValue,
@@ -1267,29 +1271,6 @@ logEvent("page_view", `Viewed ${window.location.pathname}`, {
       });
     }
   });
-
-  // Track cart changes
-  let lastCartState = null;
-  const trackCartChanges = async () => {
-    try {
-      const response = await fetch('/cart.js');
-      const cart = await response.json();
-      const cartState = JSON.stringify(cart.items.map(item => `${item.id}-${item.quantity}`));
-      
-      if (lastCartState && cartState !== lastCartState) {
-        logEvent("cart_update", "Cart contents changed", {
-          item_count: cart.items.length,
-          total_price: cart.total_price
-        });
-      }
-      
-      lastCartState = cartState;
-    } catch (err) {
-      console.error("Cart tracking error:", err);
-    }
-  };
-  
-  setInterval(trackCartChanges, 5000);
 
   // Clean up before unload
   window.addEventListener("beforeunload", () => {
