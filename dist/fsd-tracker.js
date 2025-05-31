@@ -371,8 +371,11 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
         peak_value: 0,
         add_events: 0,
         remove_events: 0,
-        last_change: null
+        last_change: null,
+        item_count: 0
       },
+      cart_token: null,
+      checkout_attempted: false, 
       product_engagement: {
         views: 0,
         image_interactions: 0,
@@ -573,37 +576,69 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
   let lastClickX = 0, lastClickY = 0;
   
   const handleClick = (e) => {
-    const currentTime = Date.now();
-    const timeSinceLastClick = currentTime - lastClickTime;
+  const currentTime = Date.now();
+  const timeSinceLastClick = currentTime - lastClickTime;
+  
+  behaviorData.interactions.total_clicks++;
+  
+  const target = e.target;
+  
+  // Track checkout attempts
+  if (target.closest('.checkout-button, [name="add"], [href*="/checkout"], form[action*="/cart/add"], button[type="submit"][name="add"], input[name="checkout"], button[name="checkout"], a[href="/checkout"], #checkout, .cart__checkout')) {
+    const isCheckoutClick = target.closest('.checkout-button, [href*="/checkout"], input[name="checkout"], button[name="checkout"], a[href="/checkout"], #checkout, .cart__checkout');
     
-    behaviorData.interactions.total_clicks++;
-    
-    // Detect rage clicks
-    const clickDistance = Math.sqrt(
-      Math.pow(e.clientX - lastClickX, 2) + 
-      Math.pow(e.clientY - lastClickY, 2)
-    );
-    
-    if (timeSinceLastClick < 1000 && clickDistance < 50) {
-      clicksInSameArea++;
-      if (clicksInSameArea >= 3) {
-        behaviorData.mouse.rage_clicks++;
-        behaviorData.flags.is_frustrated = true;
+    if (isCheckoutClick && behaviorData.ecommerce.cart_interactions.current_value > 0) {
+      behaviorData.ecommerce.checkout_attempted = true;
+      behaviorData.flags.checkout_intent = true;
+      
+      logEvent("checkout_intent", "User clicked checkout", {
+        cart_value: behaviorData.ecommerce.cart_interactions.current_value,
+        item_count: behaviorData.ecommerce.cart_interactions.item_count,
+        cart_token: behaviorData.ecommerce.cart_token,
+        button_text: target.textContent?.trim() || target.value || 'Checkout'
+      });
+      
+      // Update cart token record with checkout attempt
+      if (behaviorData.ecommerce.cart_token && supabaseReady) {
+        storeCheckoutAttempt();
       }
-    } else {
-      clicksInSameArea = 1;
     }
-    
-    // Detect dead clicks
-    const target = e.target;
-    if (!target.href && !target.onclick && !target.closest('a, button, input, select, textarea')) {
-      behaviorData.mouse.dead_clicks++;
+  }
+  
+  // Detect rage clicks
+  const clickDistance = Math.sqrt(
+    Math.pow(e.clientX - lastClickX, 2) + 
+    Math.pow(e.clientY - lastClickY, 2)
+  );
+  
+  if (timeSinceLastClick < 1000 && clickDistance < 50) {
+    clicksInSameArea++;
+    if (clicksInSameArea >= 3) {
+      behaviorData.mouse.rage_clicks++;
+      behaviorData.flags.is_frustrated = true;
     }
-    
-    lastClickTime = currentTime;
-    lastClickX = e.clientX;
-    lastClickY = e.clientY;
-  };
+  } else {
+    clicksInSameArea = 1;
+  }
+  
+  // Detect dead clicks
+  if (!target.href && !target.onclick && !target.closest('a, button, input, select, textarea')) {
+    behaviorData.mouse.dead_clicks++;
+  }
+  
+  // Log timeline events for important clicks
+  if (target.closest('.add-to-cart, .checkout, .buy-now, .product-option')) {
+    logEvent("click", `Clicked: ${target.textContent || target.className}`, {
+      element: target.tagName,
+      class: target.className,
+      id: target.id
+    });
+  }
+  
+  lastClickTime = currentTime;
+  lastClickX = e.clientX;
+  lastClickY = e.clientY;
+};
 
   // Track hover events with category aggregation
   const hoverTracking = new Map();
@@ -731,41 +766,135 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
   const trackEcommerce = () => {
     let lastCartValue = 0;
     let lastItemCount = 0;
+    let lastCartState = null; 
     
     const pollCart = async () => {
-      try {
-        const response = await fetch('/cart.js');
-        const cart = await response.json();
-        
-        // Update current cart state
-        behaviorData.ecommerce.cart_interactions.current_value = cart.total_price;
-        behaviorData.ecommerce.cart_interactions.peak_value = Math.max(
-          behaviorData.ecommerce.cart_interactions.peak_value,
-          cart.total_price
-        );
-        
-        // Detect changes
-        if (cart.items.length > lastItemCount) {
-          behaviorData.ecommerce.cart_interactions.add_events++;
-          behaviorData.ecommerce.cart_interactions.last_change = 'add';
-          behaviorData.flags.shows_purchase_intent = true;
-        } else if (cart.items.length < lastItemCount) {
-          behaviorData.ecommerce.cart_interactions.remove_events++;
-          behaviorData.ecommerce.cart_interactions.last_change = 'remove';
-        }
-        
-        lastCartValue = cart.total_price;
-        lastItemCount = cart.items.length;
-      } catch (err) {
-        console.error('Cart polling error:', err);
-      }
-    };
+  try {
+    const response = await fetch('/cart.js');
+    const cart = await response.json();
     
-    // Poll cart every 10 seconds
-    setInterval(pollCart, 10000);
-    pollCart();
-  };
+    const currentValue = cart.total_price / 100; // Convert cents to dollars
+    const itemCount = cart.item_count;
+    const cartToken = cart.token; // Capture cart token
+    
+    // Store cart token if it's new
+    if (cartToken && cartToken !== behaviorData.ecommerce.cart_token) {
+      behaviorData.ecommerce.cart_token = cartToken;
+      
+      // Log cart token association
+      logEvent("cart_identified", "Cart token captured", {
+        cart_token: cartToken,
+        cart_value: currentValue,
+        item_count: itemCount
+      });
+      
+      // Store cart token in database
+      if (supabaseReady) {
+        storeCartToken(cartToken, currentValue, itemCount);
+      }
+    }
+    
+    // Update current cart state
+    behaviorData.ecommerce.cart_interactions.current_value = currentValue;
+    behaviorData.ecommerce.cart_interactions.peak_value = Math.max(
+      behaviorData.ecommerce.cart_interactions.peak_value,
+      currentValue
+    );
+    behaviorData.ecommerce.cart_interactions.item_count = itemCount;
+    
+    // Detect changes
+    if (itemCount > lastItemCount) {
+      behaviorData.ecommerce.cart_interactions.add_events++;
+      behaviorData.ecommerce.cart_interactions.last_change = 'add';
+      behaviorData.flags.shows_purchase_intent = true;
+      
+      logEvent("cart_updated", "Item added to cart", {
+        cart_value: currentValue,
+        previous_value: lastCartValue,
+        item_count: itemCount,
+        cart_token: cartToken
+      });
+    } else if (itemCount < lastItemCount) {
+      behaviorData.ecommerce.cart_interactions.remove_events++;
+      behaviorData.ecommerce.cart_interactions.last_change = 'remove';
+      
+      logEvent("cart_updated", "Item removed from cart", {
+        cart_value: currentValue,
+        previous_value: lastCartValue,
+        item_count: itemCount,
+        cart_token: cartToken
+      });
+    }
+    
+    // Update tracking variables
+    lastCartValue = currentValue;
+    lastItemCount = itemCount;
+    lastCartState = cart;
+    
+  } catch (err) {
+    console.error('Cart polling error:', err);
+  }
+};
 
+// Poll cart every 10 seconds
+setInterval(pollCart, 10000);
+pollCart();
+};
+
+  // Store cart token for conversion matching
+async function storeCartToken(cartToken, cartValue, itemCount) {
+  if (!cartToken || !supabaseReady) return;
+  
+  try {
+    const { error } = await supabaseClient
+      .from('fsd_cart_tokens')
+      .upsert({
+        cart_token: cartToken,
+        user_id: userId,
+        session_id: sessionId,
+        last_seen: new Date().toISOString(),
+        cart_value: cartValue,
+        item_count: itemCount,
+        behavior_data: {
+          flags: behaviorData.flags,
+          engagement_score: calculateEngagementScore(),
+          device: behaviorData.technical
+        }
+      }, {
+        onConflict: 'cart_token'
+      });
+      
+    if (error) {
+      console.error('Failed to store cart token:', error);
+    }
+  } catch (err) {
+    console.error('Cart token storage error:', err);
+  }
+}
+  
+async function storeCheckoutAttempt() {
+  if (!behaviorData.ecommerce.cart_token || !supabaseReady) return;
+  
+  try {
+    await supabaseClient
+      .from('fsd_cart_tokens')
+      .update({
+        checkout_attempted: true,
+        checkout_attempted_at: new Date().toISOString(),
+        pre_checkout_behavior: {
+          time_on_site: Date.now() - sessionStartTime,
+          pages_viewed: behaviorData.navigation?.page_views_count || 1,
+          engagement_score: calculateEngagementScore(),
+          scroll_depth: behaviorData.scroll.max_depth_percent,
+          total_interactions: behaviorData.interactions.total_clicks + behaviorData.interactions.total_hovers
+        }
+      })
+      .eq('cart_token', behaviorData.ecommerce.cart_token);
+  } catch (err) {
+    console.error('Failed to update checkout attempt:', err);
+  }
+}
+  
   // Performance monitoring - simplified
   let fpsSum = 0;
   let fpsCount = 0;
@@ -855,6 +984,28 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
       // Calculate derived metrics
       const totalTime = Date.now() - sessionStartTime;
       behaviorData.attention.total_engaged_time = behaviorData.attention.total_engaged_time || totalTime - behaviorData.attention.total_idle_time;
+      behaviorData.attention.avg_engagement_score = calculateEngagementScore();
+    
+    // Check for cart abandonment
+    if (behaviorData.ecommerce.cart_interactions.current_value > 0) {
+      const timeSinceLastActivity = Date.now() - lastActivityTime;
+      const cartAge = behaviorData.ecommerce.cart_interactions.last_change ? 
+        Date.now() - new Date(behaviorData.ecommerce.cart_interactions.last_change).getTime() : 0;
+      
+      // Mark as high abandonment risk after 5 minutes of inactivity with items in cart
+      if (timeSinceLastActivity > 300000 && !behaviorData.flags.abandonment_risk_logged) {
+        behaviorData.flags.high_abandonment_risk = true;
+        behaviorData.flags.abandonment_risk_logged = true;
+        
+        logEvent("abandonment_risk", "High cart abandonment risk detected", {
+          cart_value: behaviorData.ecommerce.cart_interactions.current_value,
+          time_inactive: Math.round(timeSinceLastActivity / 1000),
+          cart_age: Math.round(cartAge / 1000),
+          cart_token: behaviorData.ecommerce.cart_token
+        });
+      }
+    }
+      
       
       // Determine scroll pattern
       const scrollTimes = {
