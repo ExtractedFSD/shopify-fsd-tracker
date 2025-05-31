@@ -738,7 +738,6 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
   });
 
   // Attention and idle tracking - simplified
-  let lastActivityTime = Date.now();
   let isIdle = false;
   
   const markActive = () => {
