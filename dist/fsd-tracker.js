@@ -794,6 +794,7 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
     if (cartToken && cartToken !== behaviorData.ecommerce.cart_token) {
       console.log('✅ Storing new token!');
       behaviorData.ecommerce.cart_token = cartToken;
+      behaviorData.ecommerce.cart_token_stored = false; 
       
       // Log cart token association
       logEvent("cart_identified", "Cart token captured", {
@@ -805,6 +806,7 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
       // Store cart token in database
       if (supabaseReady) {
         storeCartToken(cartToken, currentValue, itemCount);
+        behaviorData.ecommerce.cart_token_stored = true;
       }
     }
     
@@ -1233,6 +1235,16 @@ if (!checkError && (!existingSession || existingSession.length === 0)) {
 // This part should run regardless of whether session is new or existing
 supabaseReady = true;
 
+      // Check if we have a cart token that wasn't stored yet
+if (behaviorData.ecommerce.cart_token && !behaviorData.ecommerce.cart_token_stored) {
+  console.log('📦 Storing cart token that was captured before Supabase was ready');
+  await storeCartToken(
+    behaviorData.ecommerce.cart_token, 
+    behaviorData.ecommerce.cart_interactions.current_value,
+    behaviorData.ecommerce.cart_interactions.item_count
+  );
+}
+      
 // Process any queued events
 await processEventQueue();
 
