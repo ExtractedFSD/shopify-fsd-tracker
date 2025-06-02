@@ -772,6 +772,7 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
     let lastCartState = null; 
     
     const pollCart = async () => {
+  console.log('🔄 Poll - Supabase ready?', supabaseReady); 
   try {
     const response = await fetch('/cart.js');
     const cart = await response.json();
@@ -779,9 +780,19 @@ sessionStorage.setItem('fsd_session_data', JSON.stringify({
     const currentValue = cart.total_price / 100; // Convert cents to dollars
     const itemCount = cart.item_count;
     const cartToken = cart.token; // Capture cart token
+
+// Debug logging
+  console.log('🔍 Token detection:', {
+  cartToken: cartToken,
+  storedToken: behaviorData.ecommerce.cart_token,
+  areEqual: cartToken === behaviorData.ecommerce.cart_token,
+  willStore: cartToken && cartToken !== behaviorData.ecommerce.cart_token,
+  supabaseReady: supabaseReady
+  });
     
     // Store cart token if it's new
     if (cartToken && cartToken !== behaviorData.ecommerce.cart_token) {
+      console.log('✅ Storing new token!');
       behaviorData.ecommerce.cart_token = cartToken;
       
       // Log cart token association
