@@ -1339,7 +1339,10 @@ logEvent("page_view", `Viewed ${window.location.pathname}`, {
     locationData,
     weatherData,
     getEngagementScore: calculateEngagementScore,
-    logEvent
+    logEvent,
+    storeCartToken,
+    supabaseClient,
+    supabaseReady    
   };
   
   console.log("✅ FSD Tracker v4 Initialized - AI-Optimized");
